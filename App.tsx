@@ -36,7 +36,7 @@ const App: React.FC = () => {
   const [onlyNewInfo, setOnlyNewInfo] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [selectedEngine, setSelectedEngine] = useState<EngineStatus | null>(null);
-  
+
   // History State
   const [history, setHistory] = useState<AnalysisSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
@@ -56,9 +56,9 @@ const App: React.FC = () => {
         await saveUser(currentUser);
         const userData = await getUserData(currentUser.uid);
         if (userData && userData.preferences) {
-           setOnlyNewInfo(userData.preferences.defaultIncrementalMode);
+          setOnlyNewInfo(userData.preferences.defaultIncrementalMode);
         }
-        
+
         loadHistory(currentUser.uid);
       } else {
         // Load local history if not logged in
@@ -81,13 +81,13 @@ const App: React.FC = () => {
       await auth.signInWithPopup(googleProvider);
     } catch (error: any) {
       console.error("Login failed", error);
-      
+
       // Fallback for Preview/Dev environments where Firebase Auth fails
       // This allows the app to function in "Demo Mode" so you are not locked out
-      if (error?.code === 'auth/operation-not-supported-in-this-environment' || 
-          error?.code === 'auth/unauthorized-domain' ||
-          error?.message?.includes('protocol')) {
-            
+      if (error?.code === 'auth/operation-not-supported-in-this-environment' ||
+        error?.code === 'auth/unauthorized-domain' ||
+        error?.message?.includes('protocol')) {
+
         const demoUser = {
           uid: 'demo-mode-user',
           displayName: 'Guest Trader',
@@ -125,11 +125,11 @@ const App: React.FC = () => {
   };
 
   const updateEngineStatus = (
-    id: EngineId, 
-    status: EngineStatus['status'], 
-    result: string | null = null, 
-    error?: string, 
-    usage?: any, 
+    id: EngineId,
+    status: EngineStatus['status'],
+    result: string | null = null,
+    error?: string,
+    usage?: any,
     sources?: any
   ) => {
     setEngines((prev) => {
@@ -155,10 +155,10 @@ const App: React.FC = () => {
 
   const handleDeleteSession = async (id: string) => {
     const originalHistory = [...history];
-    
+
     // Optimistic update
     setHistory(prev => prev.filter(s => s.id !== id));
-    
+
     try {
       await deleteSession(user?.uid || null, id);
       if (currentSessionId === id) {
@@ -173,88 +173,88 @@ const App: React.FC = () => {
   };
 
   const handleUpdateReport = async () => {
-     if (!currentSessionId || isUpdating) return;
-     if (!user) {
-         setGlobalError("Please login to update reports.");
-         return;
-     }
-     
-     setIsUpdating(true);
-     setGlobalError(null);
+    if (!currentSessionId || isUpdating) return;
+    if (!user) {
+      setGlobalError("Please login to update reports.");
+      return;
+    }
 
-     try {
-       const oldReportDate = new Date(engines.synthesizer.usage ? history.find(h => h.id === currentSessionId)?.timestamp || Date.now() : Date.now()).toLocaleDateString();
-       const previousSummary = engines.synthesizer.result;
+    setIsUpdating(true);
+    setGlobalError(null);
 
-       const scopeInstruction = onlyNewInfo 
-         ? `STRICT CONSTRAINT: You are in 'Incremental Mode'. Search for and report ONLY on events, news, and filings released AFTER ${oldReportDate}. Do NOT re-analyze old data.`
-         : `BROAD SCOPE: Re-evaluate the company's status. While searching for news since ${oldReportDate}, you may also verify if the core thesis still holds against broader market changes found in recent search results.`;
+    try {
+      const oldReportDate = new Date(engines.synthesizer.usage ? history.find(h => h.id === currentSessionId)?.timestamp || Date.now() : Date.now()).toLocaleDateString();
+      const previousSummary = engines.synthesizer.result;
 
-       updateEngineStatus('updater', 'loading');
-       const updatePrompt = `LAST ANALYSIS DATE: ${oldReportDate}\nPREVIOUS SUMMARY:\n${previousSummary}\n\nINSTRUCTION: ${scopeInstruction}`;
-       
-       const updaterRes = await runEngine('updater', stockSymbol, undefined, updatePrompt);
-       updateEngineStatus('updater', 'success', updaterRes.text, undefined, updaterRes.usage, updaterRes.sources);
+      const scopeInstruction = onlyNewInfo
+        ? `STRICT CONSTRAINT: You are in 'Incremental Mode'. Search for and report ONLY on events, news, and filings released AFTER ${oldReportDate}. Do NOT re-analyze old data.`
+        : `BROAD SCOPE: Re-evaluate the company's status. While searching for news since ${oldReportDate}, you may also verify if the core thesis still holds against broader market changes found in recent search results.`;
 
-       updateEngineStatus('synthesizer', 'loading');
-       const synthesisContext = `
+      updateEngineStatus('updater', 'loading');
+      const updatePrompt = `LAST ANALYSIS DATE: ${oldReportDate}\nPREVIOUS SUMMARY:\n${previousSummary}\n\nINSTRUCTION: ${scopeInstruction}`;
+
+      const updaterRes = await runEngine('updater', stockSymbol, undefined, updatePrompt);
+      updateEngineStatus('updater', 'success', updaterRes.text, undefined, updaterRes.usage, updaterRes.sources);
+
+      updateEngineStatus('synthesizer', 'loading');
+      const synthesisContext = `
          --- PREVIOUS REPORT (${oldReportDate}) ---
          ${previousSummary}
          
          --- UPDATER ENGINE FINDINGS (Mode: ${onlyNewInfo ? 'Incremental' : 'Full Scan'}) ---
          ${updaterRes.text}
        `;
-       
-       const finalRes = await runEngine('synthesizer', stockSymbol, undefined, synthesisContext);
-       updateEngineStatus('synthesizer', 'success', finalRes.text, undefined, finalRes.usage, finalRes.sources);
 
-       // Save Updated Session
-       setEngines(prev => {
-          const finalEngines = {
-             ...prev,
-             updater: { ...prev.updater, status: 'success' as const, result: updaterRes.text, usage: updaterRes.usage, sources: updaterRes.sources },
-             synthesizer: { ...prev.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources }
-          };
-          
-          saveSession(user.uid, stockSymbol, finalEngines).then(updatedSession => {
-              if (updatedSession) {
-                  setHistory(prev => {
-                       const idx = prev.findIndex(s => s.symbol === updatedSession.symbol);
-                       if (idx >= 0) {
-                           const newHist = [...prev];
-                           newHist[idx] = updatedSession;
-                           return newHist;
-                       }
-                       return [updatedSession, ...prev];
-                  });
+      const finalRes = await runEngine('synthesizer', stockSymbol, undefined, synthesisContext);
+      updateEngineStatus('synthesizer', 'success', finalRes.text, undefined, finalRes.usage, finalRes.sources);
+
+      // Save Updated Session
+      setEngines(prev => {
+        const finalEngines = {
+          ...prev,
+          updater: { ...prev.updater, status: 'success' as const, result: updaterRes.text, usage: updaterRes.usage, sources: updaterRes.sources },
+          synthesizer: { ...prev.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources }
+        };
+
+        saveSession(user.uid, stockSymbol, finalEngines).then(updatedSession => {
+          if (updatedSession) {
+            setHistory(prev => {
+              const idx = prev.findIndex(s => s.symbol === updatedSession.symbol);
+              if (idx >= 0) {
+                const newHist = [...prev];
+                newHist[idx] = updatedSession;
+                return newHist;
               }
-          });
-          return finalEngines;
-       });
+              return [updatedSession, ...prev];
+            });
+          }
+        });
+        return finalEngines;
+      });
 
-     } catch (e) {
-       console.error(e);
-       setGlobalError("Failed to update report: " + (e as Error).message);
-       updateEngineStatus('updater', 'error', null, (e as Error).message);
-     } finally {
-       setIsUpdating(false);
-     }
+    } catch (e) {
+      console.error(e);
+      setGlobalError("Failed to update report: " + (e as Error).message);
+      updateEngineStatus('updater', 'error', null, (e as Error).message);
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!user) {
-        setGlobalError("Authentication required. Please log in to start the analysis.");
-        handleLogin();
-        return;
+      setGlobalError("Authentication required. Please log in to start the analysis.");
+      handleLogin();
+      return;
     }
 
     if (!stockSymbol.trim()) return;
 
     setIsAnalyzing(true);
     setGlobalError(null);
-    setCurrentSessionId(undefined); 
+    setCurrentSessionId(undefined);
     setEngines(buildInitialState());
 
     try {
@@ -310,20 +310,20 @@ const App: React.FC = () => {
       updateEngineStatus('synthesizer', 'success', finalRes.text, undefined, finalRes.usage, finalRes.sources);
 
       setEngines(prev => {
-         const finalEngines = {
-           ...prev,
-           synthesizer: { ...prev.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources }
-         };
-         
-         // Auto-save to either Firestore (if logged in) or LocalStorage (if not/demo)
-         saveSession(user.uid, stockSymbol, finalEngines).then(newSession => {
-             if (newSession) {
-                 setHistory(prev => [newSession, ...prev]);
-                 setCurrentSessionId(newSession.id);
-             }
-         });
-         
-         return finalEngines;
+        const finalEngines = {
+          ...prev,
+          synthesizer: { ...prev.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources }
+        };
+
+        // Auto-save to either Firestore (if logged in) or LocalStorage (if not/demo)
+        saveSession(user.uid, stockSymbol, finalEngines).then(newSession => {
+          if (newSession) {
+            setHistory(prev => [newSession, ...prev]);
+            setCurrentSessionId(newSession.id);
+          }
+        });
+
+        return finalEngines;
       });
 
     } catch (error) {
@@ -338,7 +338,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col">
       <div className="flex-grow p-4 md:p-8 pb-20">
         <div className="max-w-7xl mx-auto">
-          
+
           {/* Header */}
           <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-6">
             <div className="mb-4 md:mb-0">
@@ -348,60 +348,60 @@ const App: React.FC = () => {
               </h1>
               <p className="text-slate-500 mt-2 font-mono text-sm">Indian Market Focus • Gemini 2.5/3.0 Powered</p>
             </div>
-            
-            <div className="flex items-center gap-4">
-               {/* Auth & Status Section */}
-               <div className="flex items-center space-x-2 bg-slate-900 px-4 py-2 rounded-full border border-slate-800">
-                  <div className={`w-2 h-2 rounded-full ${isAnalyzing || isUpdating ? 'bg-yellow-500 animate-pulse' : 'bg-emerald-500'}`}></div>
-                  <span className="text-xs text-slate-400 font-mono">{isAnalyzing || isUpdating ? 'AGENTS ACTIVE' : 'SYSTEM READY'}</span>
-               </div>
 
-               {user ? (
-                 <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
-                   <div className="flex items-center gap-2">
-                     {user.photoURL ? (
-                       <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-slate-700" />
-                     ) : (
-                       <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-                         <UserIcon className="w-4 h-4 text-white" />
-                       </div>
-                     )}
-                     <div className="hidden sm:block">
-                       <p className="text-xs text-white font-medium truncate max-w-[100px]">{user.displayName}</p>
-                       <p className="text-[10px] text-slate-500">
-                         {user.uid === 'demo-mode-user' ? 'Guest Access' : 'Pro Plan'}
-                       </p>
-                     </div>
-                   </div>
-                   <button 
-                     onClick={handleLogout}
-                     className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
-                     title="Sign Out"
-                   >
-                     <LogOut className="w-4 h-4" />
-                   </button>
-                 </div>
-               ) : (
-                 <button
-                   onClick={handleLogin}
-                   className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-blue-900/20"
-                 >
-                   <LogIn className="w-4 h-4" />
-                   Sign In
-                 </button>
-               )}
+            <div className="flex items-center gap-4">
+              {/* Auth & Status Section */}
+              <div className="flex items-center space-x-2 bg-slate-900 px-4 py-2 rounded-full border border-slate-800">
+                <div className={`w-2 h-2 rounded-full ${isAnalyzing || isUpdating ? 'bg-yellow-500 animate-pulse' : 'bg-emerald-500'}`}></div>
+                <span className="text-xs text-slate-400 font-mono">{isAnalyzing || isUpdating ? 'AGENTS ACTIVE' : 'SYSTEM READY'}</span>
+              </div>
+
+              {user ? (
+                <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
+                  <div className="flex items-center gap-2">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-slate-700" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+                        <UserIcon className="w-4 h-4 text-white" />
+                      </div>
+                    )}
+                    <div className="hidden sm:block">
+                      <p className="text-xs text-white font-medium truncate max-w-[100px]">{user.displayName}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {user.uid === 'demo-mode-user' ? 'Guest Access' : 'Pro Plan'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
+                    title="Sign Out"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleLogin}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-blue-900/20"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Sign In
+                </button>
+              )}
             </div>
           </header>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            
+
             {/* Main Content Area */}
             <div className="lg:col-span-9 space-y-8">
               {/* Input Section */}
               <section>
                 <form onSubmit={handleAnalyze} className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden group">
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6 relative z-10">
                     <div className="md:col-span-4">
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Indian Stock Symbol</label>
@@ -417,11 +417,11 @@ const App: React.FC = () => {
                         />
                       </div>
                     </div>
-                    
+
                     <div className="md:col-span-6">
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Specific Hypothesis</label>
                       <div className="relative">
-                         <Terminal className="absolute left-3 top-3.5 text-slate-500 w-5 h-5" />
+                        <Terminal className="absolute left-3 top-3.5 text-slate-500 w-5 h-5" />
                         <input
                           type="text"
                           value={userQuery}
@@ -468,44 +468,44 @@ const App: React.FC = () => {
 
               {/* Synthesis Result */}
               {engines.synthesizer.status === 'success' && (
-                 <div className="animate-fade-in-up relative">
-                    {currentSessionId && user && (
-                      <div className="absolute top-4 right-4 z-10 flex items-center gap-4">
-                        {/* Incremental Toggle */}
-                        <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-slate-700/50">
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input 
-                              type="checkbox" 
-                              className="sr-only peer" 
-                              checked={onlyNewInfo}
-                              onChange={() => {
-                                const newValue = !onlyNewInfo;
-                                setOnlyNewInfo(newValue);
-                                if (user) {
-                                  updateUserPreferences(user.uid, { defaultIncrementalMode: newValue });
-                                }
-                              }}
-                              disabled={isUpdating}
-                            />
-                            <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                            <span className="ml-2 text-xs font-mono text-slate-300">
-                              {onlyNewInfo ? 'Incremental' : 'Deep Scan'}
-                            </span>
-                          </label>
-                        </div>
-
-                        <button 
-                          onClick={handleUpdateReport}
-                          disabled={isUpdating}
-                          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <RotateCw className={`w-4 h-4 ${isUpdating ? 'animate-spin' : ''}`} />
-                          {isUpdating ? 'Checking...' : 'Update'}
-                        </button>
+                <div className="animate-fade-in-up relative">
+                  {currentSessionId && user && (
+                    <div className="absolute top-4 right-4 z-10 flex items-center gap-4">
+                      {/* Incremental Toggle */}
+                      <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-slate-700/50">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={onlyNewInfo}
+                            onChange={() => {
+                              const newValue = !onlyNewInfo;
+                              setOnlyNewInfo(newValue);
+                              if (user) {
+                                updateUserPreferences(user.uid, { defaultIncrementalMode: newValue });
+                              }
+                            }}
+                            disabled={isUpdating}
+                          />
+                          <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                          <span className="ml-2 text-xs font-mono text-slate-300">
+                            {onlyNewInfo ? 'Incremental' : 'Deep Scan'}
+                          </span>
+                        </label>
                       </div>
-                    )}
-                    <FinalReport synthesizer={engines.synthesizer} totalTokens={calculateTotalTokens()} />
-                 </div>
+
+                      <button
+                        onClick={handleUpdateReport}
+                        disabled={isUpdating}
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <RotateCw className={`w-4 h-4 ${isUpdating ? 'animate-spin' : ''}`} />
+                        {isUpdating ? 'Checking...' : 'Update'}
+                      </button>
+                    </div>
+                  )}
+                  <FinalReport synthesizer={engines.synthesizer} totalTokens={calculateTotalTokens()} />
+                </div>
               )}
 
               {/* Status Bar */}
@@ -513,10 +513,10 @@ const App: React.FC = () => {
                 <div className="p-4 bg-slate-900/50 border border-blue-500/30 rounded-xl flex items-center justify-center space-x-4 animate-pulse">
                   <BookOpen className="w-5 h-5 text-blue-400" />
                   <span className="text-sm text-blue-300 font-mono">
-                    {engines.updater.status === 'loading' 
-                      ? `Monitoring Portfolio: ${onlyNewInfo ? 'Scanning strictly for new events...' : 'Performing deep re-evaluation...'}` 
-                      : engines.planner.status === 'loading' 
-                        ? 'Planning Research Strategy...' 
+                    {engines.updater.status === 'loading'
+                      ? `Monitoring Portfolio: ${onlyNewInfo ? 'Scanning strictly for new events...' : 'Performing deep re-evaluation...'}`
+                      : engines.planner.status === 'loading'
+                        ? 'Planning Research Strategy...'
                         : 'Librarian Gathering Master Data...'}
                   </span>
                 </div>
@@ -526,34 +526,34 @@ const App: React.FC = () => {
               <h3 className="text-lg font-bold text-slate-400 mb-4 flex items-center gap-2">
                 <BrainCircuit className="w-5 h-5" /> Active Agents
               </h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                 <EngineCard engine={engines.planner} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.librarian} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.updater} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.business} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.quant} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.forensic} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.valuation} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.technical} onViewDetails={setSelectedEngine} />
-                 <EngineCard engine={engines.custom} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.planner} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.librarian} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.updater} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.business} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.quant} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.forensic} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.valuation} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.technical} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.custom} onViewDetails={setSelectedEngine} />
               </div>
             </div>
 
             {/* Sidebar */}
             <div className="lg:col-span-3 space-y-4">
               {isLoadingHistory ? (
-                   <div className="text-center p-8 text-slate-500 text-sm animate-pulse">Loading portfolio...</div>
-                ) : (
-                  <HistorySidebar 
-                    sessions={history} 
-                    onSelectSession={handleLoadSession} 
-                    onDeleteSession={handleDeleteSession}
-                    currentSessionId={currentSessionId}
-                  />
-                )
+                <div className="text-center p-8 text-slate-500 text-sm animate-pulse">Loading portfolio...</div>
+              ) : (
+                <HistorySidebar
+                  sessions={history}
+                  onSelectSession={handleLoadSession}
+                  onDeleteSession={handleDeleteSession}
+                  currentSessionId={currentSessionId}
+                />
+              )
               }
-              
+
               {!user && (
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-center">
                   <LogIn className="w-8 h-8 text-slate-600 mx-auto mb-3" />
@@ -587,4 +587,40 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-white bg-slate-900 min-h-screen">
+          <h1 className="text-2xl text-red-500 mb-4">Something went wrong.</h1>
+          <pre className="bg-black p-4 rounded text-sm overflow-auto text-red-300">
+            {this.state.error?.toString()}
+          </pre>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default function WrappedApp() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
