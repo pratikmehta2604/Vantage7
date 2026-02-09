@@ -1,0 +1,5 @@
+{
+  "name": "Vantage7",
+  "description": "A multi-agent stock analysis platform simulating a professional hedge fund team using Gemini 2.5 Flash and Pro models.",
+  "requestFramePermissions": []
+}
