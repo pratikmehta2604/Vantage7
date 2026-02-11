@@ -1,18 +1,50 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ENGINE_CONFIGS } from '../constants';
 import { EngineId, TokenUsage, WebSource } from '../types';
 
 // Initialize Gemini Client
-// Checks for REACT_APP_GEMINI_API_KEY (Frontend) or API_KEY (Node/System)
-// Fallback to the provided key if env vars are missing in the environment.
 const apiKey = process.env.REACT_APP_GEMINI_API_KEY || process.env.API_KEY;
 
 if (!apiKey) {
   console.error("Gemini API Key is missing. Please add REACT_APP_GEMINI_API_KEY to your .env file.");
 }
 
-// Initialize with the key or a dummy string to prevent immediate crash, though calls will fail without a valid key.
-const ai = new GoogleGenAI({ apiKey: apiKey || 'missing-key' });
+const ai = new GoogleGenerativeAI(apiKey || 'missing-key');
+
+// Helper: Delay function for rate limiting
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper: Retry with exponential backoff
+const withRetry = async <T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 2000
+): Promise<T> => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const isRateLimit = error?.message?.includes('RESOURCE_EXHAUSTED') ||
+        error?.message?.includes('429') ||
+        error?.message?.includes('rate limit');
+
+      if (isRateLimit && attempt < maxRetries) {
+        const waitTime = baseDelayMs * Math.pow(2, attempt);
+        console.log(`Rate limited. Retrying in ${waitTime / 1000}s... (attempt ${attempt + 1}/${maxRetries})`);
+        await delay(waitTime);
+        continue;
+      }
+
+      // Enhance error message for UI
+      if (error?.message?.includes('RESOURCE_EXHAUSTED')) {
+        throw new Error(`Quota Exceeded: You've hit the free tier limit for today. Try again tomorrow or upgrade.`);
+      }
+
+      throw error;
+    }
+  }
+  throw new Error('Max retries exceeded');
+};
 
 interface EngineResponse {
   text: string;
@@ -32,57 +64,78 @@ export const runEngine = async (
 
   const config = ENGINE_CONFIGS[engineId];
 
-  // Model Selection Strategy:
-  // Planner/Librarian/Synthesizer: Use 'gemini-3-pro-preview' for complex reasoning, planning, and data extraction.
-  // Specialists: Use 'gemini-3-flash-preview' for efficient analysis of the provided context.
-  const isComplex = ['planner', 'librarian', 'synthesizer'].includes(engineId);
-  const modelId = isComplex ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+  // Model Selection Strategy (MAXIMUM QUALITY):
+  // User Requirement: "No compromise on quality. 1 stock per day is fine."
+  // Strategy: EVERY engine uses 'gemini-3-flash-preview' (Smartest).
+  // Strategy: EVERY engine gets 'googleSearch' (Live Data).
+  // Cost: ~10 Requests per Analysis.
+  // Capacity: ~2 Stocks per Day (20 RPD Limit).
+  // Model Selection Strategy (SINGLE SHOT + HIGH QUOTA):
+  // gemini-3-flash-preview has tight limits (20 RPD).
+  // gemini-1.5-flash has HUGE limits (1500 RPD).
+  // We use 1.5 Flash for reliability.
 
-  let fullPrompt = `${config.prompt}\n\nTarget Asset: ${stockName}`;
+  // Model Selection Strategy (SINGLE SHOT + SEARCH):
+  // User reported Gemini 3 Flash not working.
+  // Reverting to Gemini 2.5 Flash with Search Enabled.
 
-  if (engineId === 'custom' && userQuery) {
-    fullPrompt += `\n\nUser Specific Hypothesis/Query: "${userQuery}"`;
+  const modelId = 'gemini-2.5-flash';
+
+  const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' });
+  let fullPrompt = `CURRENT DATE: ${today}\n\n${config.prompt}\n\nTarget Asset: ${stockName}`;
+
+  if (userQuery) {
+    fullPrompt += `\n\nUser Question/Hypothesis: ${userQuery}`;
   }
 
-  // Inject context (Shared Storage - The "MASTER_DATA_FILE")
   if (context) {
-    fullPrompt += `\n\n=========== MASTER_DATA_FILE (SOURCE OF TRUTH) ===========\n${context}\n==========================================================\n\nINSTRUCTION: Base your analysis PRIMARILY on the MASTER_DATA_FILE above to ensure consistency and reduce hallucinations. Only use external tools if data is missing or you need real-time price/news.`;
+    fullPrompt += `\n\nCONTEXT FROM PREVIOUS STEPS:\n${context}`;
   }
+
+  // Universal Search Enabled for Agents
+  const tools = [{ googleSearch: {} }];
+
+  console.log(`[GeminiService] Running ${engineId} on ${modelId} (Tools: ${!!tools})...`);
 
   try {
-    const response = await ai.models.generateContent({
+    const ai = new GoogleGenerativeAI(apiKey);
+    const model = ai.getGenerativeModel({
       model: modelId,
-      contents: fullPrompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
+      tools: tools as any // Cast to any to avoid strict type mismatch for googleSearch
     });
 
-    const text = response.text || "Analysis failed to generate text.";
+    const result = await withRetry(async () => {
+      return await model.generateContent(fullPrompt);
+    });
 
-    // Extract token usage
+    const response = result.response;
+    const text = response.text() || "Analysis failed to generate text.";
+
+    // Extract token usage and sources
     const usage: TokenUsage = {
       promptTokenCount: response.usageMetadata?.promptTokenCount || 0,
       candidatesTokenCount: response.usageMetadata?.candidatesTokenCount || 0,
       totalTokenCount: response.usageMetadata?.totalTokenCount || 0,
     };
 
-    // Extract grounding sources (Web Search Results)
     const sources: WebSource[] = [];
     if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
       response.candidates[0].groundingMetadata.groundingChunks.forEach((chunk: any) => {
         if (chunk.web?.uri && chunk.web?.title) {
-          sources.push({
-            uri: chunk.web.uri,
-            title: chunk.web.title
-          });
+          sources.push({ uri: chunk.web.uri, title: chunk.web.title });
         }
       });
     }
 
     return { text, usage, sources };
-  } catch (error) {
+
+  } catch (error: any) {
     console.error(`Error running engine ${engineId}:`, error);
-    throw error; // Let the caller handle the error state
+
+    if (error?.message?.includes('429') || error?.message?.includes('Quota') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+      throw new Error("Gemini Quota Exceeded. Please try again tomorrow (20 RPD Limit).");
+    }
+
+    throw error;
   }
 };

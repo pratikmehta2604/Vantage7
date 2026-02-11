@@ -1,14 +1,4 @@
-export type EngineId = 
-  | 'planner'
-  | 'librarian'
-  | 'business' 
-  | 'quant' 
-  | 'forensic' 
-  | 'valuation' 
-  | 'technical' 
-  | 'custom' 
-  | 'updater'
-  | 'synthesizer';
+export type EngineId = 'planner' | 'librarian' | 'business' | 'quant' | 'forensic' | 'valuation' | 'technical' | 'updater' | 'synthesizer' | 'linkedin' | 'custom' | 'comprehensive';
 
 export interface TokenUsage {
   promptTokenCount: number;

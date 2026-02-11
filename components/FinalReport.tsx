@@ -1,6 +1,19 @@
 import React from 'react';
 import { EngineStatus } from '../types';
-import { Briefcase, Cpu, Link as LinkIcon, ExternalLink, Share2, AlertOctagon } from 'lucide-react';
+import {
+  Briefcase,
+  Cpu,
+  Link as LinkIcon,
+  ExternalLink,
+  Share2,
+  AlertOctagon,
+  TrendingUp,
+  ShieldCheck,
+  Target,
+  Zap,
+  DollarSign,
+  BookOpen
+} from 'lucide-react';
 
 interface FinalReportProps {
   synthesizer: EngineStatus;
@@ -10,168 +23,168 @@ interface FinalReportProps {
 const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens }) => {
   if (synthesizer.status !== 'success' || !synthesizer.result) return null;
 
-  const getVerdictColor = (text: string) => {
-    if (text.includes('STRONG BUY')) return 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.4)]';
-    if (text.includes('BUY')) return 'bg-green-500 shadow-green-500/50';
-    if (text.includes('SELL') || text.includes('AVOID')) return 'bg-red-500 shadow-red-500/50';
-    if (text.includes('WATCHLIST') || text.includes('HOLD')) return 'bg-yellow-500 shadow-yellow-500/50';
-    return 'bg-blue-500';
-  };
+  const rawText = synthesizer.result;
 
-  const verdictColor = getVerdictColor(synthesizer.result);
+  // --- Parsing Logic ---
+  const extractSection = (header: string, nextHeader?: string): string => {
+    const startIdx = rawText.indexOf(header);
+    if (startIdx === -1) return '';
 
-  const handleShare = async () => {
-    if (!synthesizer.result) return;
-    
-    const textToShare = `Vantage7 Investment Memo\n\n${synthesizer.result}\n\nDisclaimer: AI Generated. Not Financial Advice.`;
-    
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Vantage7 Report',
-          text: textToShare,
-        });
-      } catch (err) {
-        // Ignore abort errors
-        if ((err as Error).name !== 'AbortError') {
-           console.error('Error sharing:', err);
-        }
-      }
-    } else {
-        // Fallback for browsers that don't support navigator.share
-        navigator.clipboard.writeText(textToShare);
-        alert('Report copied to clipboard!');
+    const contentStart = startIdx + header.length;
+    let endIdx = rawText.length;
+
+    if (nextHeader) {
+      const nextIdx = rawText.indexOf(nextHeader, contentStart);
+      if (nextIdx !== -1) endIdx = nextIdx;
     }
+
+    return rawText.slice(contentStart, endIdx).trim();
   };
 
-  // Markdown renderer specific for the report structure
-  const renderContent = (text: string) => {
+  // Extract Core Sections based on new Synthesizer Prompt
+  const execSummary = extractSection('1. **Executive Summary:**', '2. **Strategic Setup');
+  const strategicSetup = extractSection('2. **Strategic Setup', '3. **360 Analysis');
+  const analysis360 = extractSection('3. **360 Analysis:**', '4. **Final Verdict');
+  const finalVerdict = extractSection('4. **Final Verdict:**');
+
+  // Fallback for old/legacy reports
+  const isLegacy = !execSummary && !finalVerdict;
+
+  // --- Helper Renderers ---
+
+  const renderMarkdown = (text: string) => {
     return text.split('\n').map((line, idx) => {
-      // Final Decision Box
-      if (line.includes('FINAL DECISION:')) {
-         const [label, value] = line.split(':');
-         return (
-           <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 p-6 bg-slate-900/80 rounded-xl border border-slate-700 backdrop-blur-sm shadow-xl">
-             <span className="text-slate-300 font-bold uppercase tracking-widest text-lg mb-2 sm:mb-0">{label.replace(/#/g, '').trim()}</span>
-             <span className={`px-6 py-2 rounded-lg text-black font-extrabold text-xl tracking-tighter text-center ${verdictColor}`}>
-               {value?.trim()}
-             </span>
-           </div>
-         );
-      }
-      
-      // Section Headers
-      if (line.includes('The "One-Line" Thesis')) {
-          return <h3 key={idx} className="text-blue-400 font-bold text-xl mt-8 mb-3 pb-2 border-b border-slate-800">The Thesis</h3>;
-      }
-      if (line.match(/^#+\s/)) {
-        // Generic headers
-        const cleanLine = line.replace(/^#+\s/, '');
-        return <h3 key={idx} className="text-white font-bold text-lg mt-8 mb-4 flex items-center gap-2">
-            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>{cleanLine}
-        </h3>;
-      }
-      // Specific Report Sections if headers aren't explicitly marked with #
-      if (line.includes('1. The Story') || line.includes('2. The Numbers') || line.includes('3. The Watchdog') || line.includes('4. The Price') || line.includes('5. The Timing')) {
-          return <h3 key={idx} className="text-white font-bold text-xl mt-8 mb-4 flex items-center gap-2">
-            <span className="text-blue-500 text-lg">●</span> {line.replace(/#/g, '').trim()}
-          </h3>;
-      }
-      
-      // Bold Text
-      if (line.includes('**')) {
-        const parts = line.split(/(\*\*.*?\*\*)/g);
-        return (
-          <p key={idx} className="text-slate-300 mb-2 leading-relaxed ml-1">
-            {parts.map((part, j) => {
-              if (part.startsWith('**') && part.endsWith('**')) {
-                return <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
-              }
-              return part;
-            })}
-          </p>
-        );
-      }
-      
-      if (line.trim() === '') return <div key={idx} className="h-2" />;
-      
-      return <p key={idx} className="text-slate-300 ml-1 mb-1 leading-relaxed">{line}</p>;
+      // Bold
+      const parts = line.split(/(\*\*.*?\*\*)/g);
+      return (
+        <p key={idx} className="mb-2 text-slate-300 leading-relaxed">
+          {parts.map((part, j) =>
+            part.startsWith('**') && part.endsWith('**')
+              ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+              : part
+          )}
+        </p>
+      );
     });
   };
 
+  const getVerdictColor = (text: string) => {
+    const lower = text.toLowerCase();
+    if (lower.includes('strong buy')) return 'from-emerald-600 to-green-500 shadow-emerald-500/20';
+    if (lower.includes('buy')) return 'from-green-600 to-emerald-500 shadow-green-500/20';
+    if (lower.includes('sell') || lower.includes('avoid')) return 'from-red-600 to-rose-500 shadow-red-500/20';
+    if (lower.includes('hold') || lower.includes('watchlist')) return 'from-yellow-600 to-amber-500 shadow-yellow-500/20';
+    return 'from-blue-600 to-indigo-500';
+  };
+
+  const verdictBg = getVerdictColor(finalVerdict || rawText);
+
+  // --- Share Handler ---
+  const handleShare = async () => {
+    const textToShare = `Vantage7 Investment Memo\n\n${rawText.slice(0, 500)}...\n\nRead more at Vantage7.`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Vantage7 Report', text: textToShare }); } catch (e) { }
+    } else {
+      navigator.clipboard.writeText(rawText);
+      alert('Report copied!');
+    }
+  };
+
+  // --- Main Render ---
+
+  if (isLegacy) {
+    // Fallback Code (kept simple)
+    return (
+      <div className="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
+        <h3 className="text-xl text-white mb-4">Analysis Report</h3>
+        <div className="prose prose-invert max-w-none text-sm font-mono">{renderMarkdown(rawText)}</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="mt-8 bg-slate-950 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl relative mb-12">
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-emerald-500" />
-      
-      <div className="p-6 md:p-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8">
-          <div className="flex items-center space-x-3 mb-4 md:mb-0">
-            <div className="p-3 bg-slate-800 rounded-lg">
-              <Briefcase className="w-6 h-6 text-indigo-400" />
+    <div className="mt-8 space-y-8 animate-fade-in-up">
+
+      {/* Header Card */}
+      <div className="relative bg-slate-900 rounded-2xl p-6 border border-slate-800 overflow-hidden shadow-2xl group">
+        <div className={`absolute top-0 left-0 w-1 h-full bg-gradient-to-b ${verdictBg}`} />
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-slate-800 rounded-lg text-blue-400">
+              <Briefcase className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white tracking-tight">CIO Investment Memo</h2>
-              <p className="text-slate-400 text-sm">Synthesized Strategy Report</p>
+              <h2 className="text-xl font-bold text-white">Investment Memo</h2>
+              <p className="text-xs text-slate-500 font-mono">AI Synthesized Strategy</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-             <button
-               onClick={handleShare}
-               className="flex items-center space-x-2 text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
-               title="Share Report"
-             >
-               <Share2 className="w-3.5 h-3.5" />
-               <span className="hidden sm:inline">SHARE</span>
-             </button>
-             <div className="flex items-center space-x-3 text-xs font-mono text-slate-500 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
-               <Cpu className="w-3 h-3" />
-               <span>SESSION COST: {totalTokens.toLocaleString()} TOKENS</span>
-             </div>
+          <div className="flex gap-2">
+            <button onClick={handleShare} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
+              <Share2 className="w-4 h-4" />
+            </button>
+            <div className="px-3 py-1 bg-slate-800 rounded-lg text-xs font-mono text-slate-500 flex items-center gap-2">
+              <Cpu className="w-3 h-3" /> {totalTokens.toLocaleString()}
+            </div>
           </div>
         </div>
 
-        <div className="prose prose-invert max-w-none font-mono text-sm leading-relaxed">
-           {renderContent(synthesizer.result)}
-        </div>
-
-        {/* Aggregate Sources if Synthesizer used any (usually it uses context, but good to have) */}
-        {synthesizer.sources && synthesizer.sources.length > 0 && (
-          <div className="mt-8 pt-6 border-t border-slate-800">
-             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-               <LinkIcon className="w-3 h-3" /> Primary Sources
-             </h4>
-             <div className="flex flex-wrap gap-3">
-               {synthesizer.sources.map((source, idx) => (
-                 <a 
-                   key={idx} 
-                   href={source.uri} 
-                   target="_blank" 
-                   rel="noopener noreferrer"
-                   className="flex items-center space-x-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 rounded-full border border-slate-700 transition-colors group"
-                 >
-                   <span className="text-xs text-blue-400 max-w-[200px] truncate">{source.title}</span>
-                   <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-white" />
-                 </a>
-               ))}
-             </div>
+        {/* Executive Summary Section */}
+        <div className="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-700/50">
+          <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+            <Zap className="w-4 h-4" /> The Elevator Pitch
+          </h3>
+          <div className="text-slate-300 text-sm leading-relaxed italic">
+            {renderMarkdown(execSummary)}
           </div>
-        )}
-
-        {/* Detailed Regulatory Disclaimer */}
-        <div className="mt-8 p-4 bg-slate-900/50 border border-slate-800 rounded-xl">
-           <div className="flex items-center gap-2 mb-2 text-yellow-600">
-             <AlertOctagon className="w-4 h-4" />
-             <h4 className="text-xs font-bold uppercase tracking-wider">Regulatory Disclaimer</h4>
-           </div>
-           <p className="text-[10px] text-slate-500 font-mono leading-relaxed text-justify">
-             This research report is generated by an Artificial Intelligence system for <strong>educational and informational purposes only</strong>. 
-             It is NOT a recommendation to buy, sell, or hold any securities. The creators of this application are <strong>not SEBI-registered Research Analysts</strong> 
-             or Investment Advisors. All data is simulated or aggregated from public sources and may be inaccurate or delayed. 
-             Stock market investments are subject to market risks; please read all scheme-related documents carefully. 
-             Always consult a certified financial planner before taking any investment decision.
-           </p>
         </div>
       </div>
+
+      {/* Strategic Setup Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800/60 shadow-lg">
+          <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Target className="w-4 h-4" /> Strategic Setup
+          </h3>
+          <div className="text-slate-300 text-sm">{renderMarkdown(strategicSetup)}</div>
+        </div>
+
+        <div className={`bg-gradient-to-br ${verdictBg} p-5 rounded-2xl shadow-lg relative overflow-hidden`}>
+          <div className="absolute inset-0 bg-black/20" />
+          <div className="relative z-10">
+            <h3 className="text-sm font-bold text-white/90 uppercase tracking-wider mb-1 flex items-center gap-2">
+              <DollarSign className="w-4 h-4" /> Final Verdict
+            </h3>
+            <div className="text-white text-sm font-medium mt-2">{renderMarkdown(finalVerdict)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 360 Analysis (The Meat) */}
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+        <div className="bg-slate-800/50 px-6 py-4 border-b border-slate-800 flex items-center gap-2">
+          <BookOpen className="w-5 h-5 text-emerald-400" />
+          <h3 className="text-lg font-bold text-white">360° Deep Dive</h3>
+        </div>
+
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* We can fuzzy match subsections here or just render the whole block */}
+          {/* For now, rendering the whole block but styling lists nicely */}
+          <div className="md:col-span-2 text-slate-300 text-sm prose prose-invert max-w-none prose-headings:text-blue-300 prose-headings:text-sm prose-headings:font-bold prose-headings:uppercase prose-li:text-slate-300">
+            {renderMarkdown(analysis360)}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer / Disclaimer */}
+      <div className="flex items-start gap-3 p-4 bg-slate-900/40 rounded-xl border border-slate-800/50">
+        <AlertOctagon className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+        <p className="text-[10px] text-slate-500 leading-relaxed text-justify">
+          <strong>AI GENERATED CONTENT. NOT FINANCIAL ADVICE.</strong> The creators are not SEBI registered.
+          Analysis is based on public data found by AI bots and may be hallucinated or outdated.
+          Please consult a qualified financial advisor before investing.
+        </p>
+      </div>
+
     </div>
   );
 };

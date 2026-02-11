@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [onlyNewInfo, setOnlyNewInfo] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [selectedEngine, setSelectedEngine] = useState<EngineStatus | null>(null);
+  const [scanMode, setScanMode] = useState<'quick' | 'deep'>('quick');
 
   // History State
   const [history, setHistory] = useState<AnalysisSession[]>([]);
@@ -147,7 +148,9 @@ const App: React.FC = () => {
 
   const handleLoadSession = (session: AnalysisSession) => {
     setStockSymbol(session.symbol);
-    setEngines(session.engines);
+    // Merge loaded engines with initial state to ensure new engines (like linkedin) exist
+    const mergedEngines = { ...buildInitialState(), ...session.engines };
+    setEngines(mergedEngines);
     setCurrentSessionId(session.id);
     setGlobalError(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -216,7 +219,7 @@ const App: React.FC = () => {
           synthesizer: { ...prev.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources }
         };
 
-        saveSession(user.uid, stockSymbol, finalEngines).then(updatedSession => {
+        saveSession(user.uid, stockSymbol, finalEngines, currentSessionId).then(updatedSession => {
           if (updatedSession) {
             setHistory(prev => {
               const idx = prev.findIndex(s => s.symbol === updatedSession.symbol);
@@ -258,79 +261,129 @@ const App: React.FC = () => {
     setEngines(buildInitialState());
 
     try {
-      updateEngineStatus('planner', 'loading');
-      let plannerRes;
-      try {
-        plannerRes = await runEngine('planner', stockSymbol);
-        updateEngineStatus('planner', 'success', plannerRes.text, undefined, plannerRes.usage, plannerRes.sources);
-      } catch (err) {
-        updateEngineStatus('planner', 'error', null, (err as Error).message);
-        throw new Error("Planning Phase Failed. Cannot proceed.");
-      }
+      if (scanMode === 'quick') {
+        // SINGLE-SHOT MODE (Super-Prompt)
+        // Solves Rate Limit (15 RPM) and Quota (20 RPD) issues permanently.
+        updateEngineStatus('comprehensive', 'loading');
 
-      updateEngineStatus('librarian', 'loading');
-      let librarianRes;
-      try {
-        librarianRes = await runEngine('librarian', stockSymbol, undefined, `PLANNER STRATEGY:\n${plannerRes.text}`);
-        updateEngineStatus('librarian', 'success', librarianRes.text, undefined, librarianRes.usage, librarianRes.sources);
-      } catch (err) {
-        updateEngineStatus('librarian', 'error', null, (err as Error).message);
-        throw new Error("Librarian failed to acquire data. Analysis aborted.");
-      }
+        const result = await runEngine('comprehensive', stockSymbol, userQuery);
 
-      const sharedContext = librarianRes.text;
+        updateEngineStatus('comprehensive', 'success', result.text, undefined, result.usage, result.sources);
 
-      const workerIds: EngineId[] = ['business', 'quant', 'forensic', 'valuation', 'technical', 'custom'];
-      workerIds.forEach(id => updateEngineStatus(id, 'loading'));
+        // Utilize result for both comprehensive and synthesizer slots for UI consistency
+        updateEngineStatus('synthesizer', 'success', result.text, undefined, result.usage, result.sources);
 
-      const promises = workerIds.map(async (id) => {
-        try {
-          const query = id === 'custom' ? userQuery : undefined;
-          const result = await runEngine(id, stockSymbol, query, sharedContext);
-          updateEngineStatus(id, 'success', result.text, undefined, result.usage, result.sources);
-          return { id, result: result.text };
-        } catch (err) {
-          updateEngineStatus(id, 'error', null, (err as Error).message);
-          return { id, result: `[Analysis Failed: ${(err as Error).message}]` };
-        }
-      });
+        setEngines(prev => {
+          const finalEngines = {
+            ...prev,
+            comprehensive: { ...prev.comprehensive, status: 'success' as const, result: result.text, usage: result.usage, sources: result.sources },
+            synthesizer: { ...prev.synthesizer, status: 'success' as const, result: result.text, usage: result.usage, sources: result.sources }
+          };
 
-      const results = await Promise.allSettled(promises);
-      const successCount = results.filter(r => r.status === 'fulfilled' && !r.value.result.includes('[Analysis Failed')).length;
-      if (successCount < 3) throw new Error("Too many specialists failed. Synthesis aborted.");
+          // Auto-save
+          saveSession(user.uid, stockSymbol, finalEngines, currentSessionId).then(newSession => {
+            if (newSession) {
+              setHistory(prev => {
+                if (prev.some(s => s.id === newSession.id)) return prev;
+                return [newSession, ...prev];
+              });
+              setCurrentSessionId(newSession.id);
+            }
+          });
 
-      const synthesisContext = results
-        .filter(r => r.status === 'fulfilled')
-        // @ts-ignore
-        .map(r => `--- REPORT FROM ${ENGINE_CONFIGS[r.value.id].name} ---\n${r.value.result}\n`)
-        .join('\n');
-
-      updateEngineStatus('synthesizer', 'loading');
-      const finalRes = await runEngine('synthesizer', stockSymbol, undefined, synthesisContext);
-      updateEngineStatus('synthesizer', 'success', finalRes.text, undefined, finalRes.usage, finalRes.sources);
-
-      setEngines(prev => {
-        const finalEngines = {
-          ...prev,
-          synthesizer: { ...prev.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources }
-        };
-
-        // Auto-save to either Firestore (if logged in) or LocalStorage (if not/demo)
-        saveSession(user.uid, stockSymbol, finalEngines).then(newSession => {
-          if (newSession) {
-            setHistory(prev => [newSession, ...prev]);
-            setCurrentSessionId(newSession.id);
-          }
+          return finalEngines;
         });
 
-        return finalEngines;
-      });
+      } else {
+        // DEEP DIVE MODE (Multi-Agent Loop)
+        // Heavy Quota Usage (~12 Requests). Use sparingly (1 Stock/Day).
+
+        // 1. Planner
+        updateEngineStatus('planner', 'loading');
+        const plannerRes = await runEngine('planner', stockSymbol);
+        updateEngineStatus('planner', 'success', plannerRes.text, undefined, plannerRes.usage, plannerRes.sources);
+        await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay for 5 RPM cap
+
+        // 2. Librarian (Search)
+        updateEngineStatus('librarian', 'loading');
+        const librarianRes = await runEngine('librarian', stockSymbol, undefined, `PLANNER STRATEGY:\n${plannerRes.text}`);
+        updateEngineStatus('librarian', 'success', librarianRes.text, undefined, librarianRes.usage, librarianRes.sources);
+        await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay
+
+        const sharedContext = `PLANNER STRATEGY:\n${plannerRes.text}\n\nLIBRARIAN DATA DOSSIER:\n${librarianRes.text}`;
+
+        // 3. Specialists Loop
+        const workerIds: EngineId[] = ['business', 'quant', 'forensic', 'valuation', 'technical', 'custom'];
+        const workerResults: { id: EngineId; result: string }[] = [];
+
+        for (const id of workerIds) {
+          updateEngineStatus(id, 'loading');
+          try {
+            const query = id === 'custom' ? userQuery : undefined;
+            const result = await runEngine(id, stockSymbol, query, sharedContext);
+            updateEngineStatus(id, 'success', result.text, undefined, result.usage, result.sources);
+            workerResults.push({ id, result: result.text });
+          } catch (err) {
+            updateEngineStatus(id, 'error', null, (err as Error).message);
+            workerResults.push({ id, result: `[Analysis Failed: ${(err as Error).message}]` });
+          }
+          await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay per specialist
+        }
+
+        // 4. Synthesizer
+        const synthesisContext = workerResults
+          .filter(r => !r.result.includes('[Analysis Failed'))
+          .map(r => `--- REPORT FROM ${ENGINE_CONFIGS[r.id].name} ---\n${r.result}\n`)
+          .join('\n');
+
+        updateEngineStatus('synthesizer', 'loading');
+        const finalRes = await runEngine('synthesizer', stockSymbol, undefined, synthesisContext);
+        updateEngineStatus('synthesizer', 'success', finalRes.text, undefined, finalRes.usage, finalRes.sources);
+
+        // Save
+        setEngines(prev => {
+          const finalEngines = { ...prev }; // Updates happen incrementally above
+          finalEngines.synthesizer = { ...prev.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources };
+
+          saveSession(user.uid, stockSymbol, finalEngines, currentSessionId).then(newSession => {
+            if (newSession) {
+              setHistory(prev => {
+                if (prev.some(s => s.id === newSession.id)) return prev;
+                return [newSession, ...prev];
+              });
+              setCurrentSessionId(newSession.id);
+            }
+          });
+          return finalEngines;
+        });
+      }
 
     } catch (error) {
       console.error("Workflow failed", error);
       setGlobalError((error as Error).message);
+      updateEngineStatus('comprehensive', 'error', null, (error as Error).message);
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleClearSession = () => {
+    setCurrentSessionId(undefined);
+    setEngines(buildInitialState());
+    setStockSymbol('');
+    setGlobalError(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleLinkedInGen = async () => {
+    if (!engines.synthesizer.result) return;
+
+    try {
+      updateEngineStatus('linkedin', 'loading');
+      const linkedInRes = await runEngine('linkedin', stockSymbol, undefined, engines.synthesizer.result);
+      updateEngineStatus('linkedin', 'success', linkedInRes.text, undefined, linkedInRes.usage, linkedInRes.sources);
+    } catch (e) {
+      updateEngineStatus('linkedin', 'error', null, (e as Error).message);
     }
   };
 
@@ -433,26 +486,49 @@ const App: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="md:col-span-2 flex items-end">
-                      {user ? (
-                        <button
-                          type="submit"
-                          disabled={isAnalyzing || isUpdating || !stockSymbol}
-                          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isAnalyzing ? <Layers className="animate-bounce" /> : <Activity />}
-                          {isAnalyzing ? '...' : 'Go'}
-                        </button>
-                      ) : (
+                    <div className="md:col-span-12 flex flex-col md:flex-row items-center justify-between gap-4 mt-2">
+                      {/* Mode Toggle */}
+                      <div className="flex items-center bg-slate-800/80 rounded-xl p-1.5 border border-slate-700 w-full md:w-auto">
                         <button
                           type="button"
-                          onClick={handleLogin}
-                          className="w-full bg-slate-800 hover:bg-slate-700 text-blue-400 font-bold py-3 px-6 rounded-xl transition-all shadow-lg border border-slate-700 flex items-center justify-center gap-2"
+                          onClick={() => setScanMode('quick')}
+                          disabled={isAnalyzing}
+                          className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${scanMode === 'quick' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
                         >
-                          <Lock className="w-4 h-4" />
-                          Login
+                          ⚡ Quick Scan
                         </button>
-                      )}
+                        <button
+                          type="button"
+                          onClick={() => setScanMode('deep')}
+                          disabled={isAnalyzing}
+                          className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${scanMode === 'deep' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/50' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
+                          title="Comprehensive Multi-Agent Analysis (Uses 12 Credits)"
+                        >
+                          🕵️ Deep Dive
+                        </button>
+                      </div>
+
+                      <div className="w-full md:w-auto">
+                        {user ? (
+                          <button
+                            type="submit"
+                            disabled={isAnalyzing || isUpdating || !stockSymbol}
+                            className={`w-full md:w-auto min-w-[120px] bg-gradient-to-r ${scanMode === 'quick' ? 'from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500' : 'from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500'} text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {isAnalyzing ? <Layers className="animate-bounce" /> : <Activity />}
+                            {isAnalyzing ? 'Analyzing...' : 'Start Analysis'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleLogin}
+                            className="w-full md:w-auto bg-slate-800 hover:bg-slate-700 text-blue-400 font-bold py-3 px-8 rounded-xl transition-all shadow-lg border border-slate-700 flex items-center justify-center gap-2"
+                          >
+                            <Lock className="w-4 h-4" />
+                            Login to Start
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </form>
@@ -471,6 +547,23 @@ const App: React.FC = () => {
                 <div className="animate-fade-in-up relative">
                   {currentSessionId && user && (
                     <div className="absolute top-4 right-4 z-10 flex items-center gap-4">
+                      {/* Close / New Analysis Button */}
+                      <button
+                        onClick={handleClearSession}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-700 transition-all flex items-center gap-2"
+                        title="Close and Start New Analysis"
+                      >
+                        x Close
+                      </button>
+
+                      <button
+                        onClick={handleLinkedInGen}
+                        disabled={engines.linkedin.status === 'loading'}
+                        className="bg-[#0077b5] hover:bg-[#006396] text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {engines.linkedin.status === 'loading' ? 'Writing...' : 'Post to LinkedIn'}
+                      </button>
+
                       {/* Incremental Toggle */}
                       <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-slate-700/50">
                         <label className="relative inline-flex items-center cursor-pointer">
@@ -494,14 +587,36 @@ const App: React.FC = () => {
                         </label>
                       </div>
 
-                      <button
-                        onClick={handleUpdateReport}
-                        disabled={isUpdating}
-                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <RotateCw className={`w-4 h-4 ${isUpdating ? 'animate-spin' : ''}`} />
-                        {isUpdating ? 'Checking...' : 'Update'}
-                      </button>
+                      <div className="flex items-center gap-4">
+                        {/* Mode Toggle */}
+                        <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+                          <button
+                            type="button"
+                            onClick={() => setScanMode('quick')}
+                            disabled={isAnalyzing}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${scanMode === 'quick' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                          >
+                            ⚡ Quick Scan (1 Credit)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setScanMode('deep')}
+                            disabled={isAnalyzing}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${scanMode === 'deep' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                          >
+                            🕵️ Deep Dive (12 Credits)
+                          </button>
+                        </div>
+
+                        <button
+                          onClick={handleUpdateReport}
+                          disabled={isUpdating}
+                          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <RotateCw className={`w-4 h-4 ${isUpdating ? 'animate-spin' : ''}`} />
+                          {isUpdating ? 'Checking...' : 'Update'}
+                        </button>
+                      </div>
                     </div>
                   )}
                   <FinalReport synthesizer={engines.synthesizer} totalTokens={calculateTotalTokens()} />
@@ -530,12 +645,13 @@ const App: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <EngineCard engine={engines.planner} onViewDetails={setSelectedEngine} />
                 <EngineCard engine={engines.librarian} onViewDetails={setSelectedEngine} />
-                <EngineCard engine={engines.updater} onViewDetails={setSelectedEngine} />
                 <EngineCard engine={engines.business} onViewDetails={setSelectedEngine} />
                 <EngineCard engine={engines.quant} onViewDetails={setSelectedEngine} />
                 <EngineCard engine={engines.forensic} onViewDetails={setSelectedEngine} />
                 <EngineCard engine={engines.valuation} onViewDetails={setSelectedEngine} />
                 <EngineCard engine={engines.technical} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.updater} onViewDetails={setSelectedEngine} />
+                <EngineCard engine={engines.linkedin} onViewDetails={setSelectedEngine} />
                 <EngineCard engine={engines.custom} onViewDetails={setSelectedEngine} />
               </div>
             </div>
