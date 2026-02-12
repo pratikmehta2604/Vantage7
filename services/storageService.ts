@@ -67,9 +67,14 @@ export const saveSession = async (userId: string | null, symbol: string, engines
     } else {
       // Save to LocalStorage for Demo User or Guest
       const sessions = getLocalSessionsInternal();
-      // Add to beginning
-      sessions.unshift(newSession);
-      // Optional: Limit size to avoid localStorage quota issues
+      // Deduplicate: replace existing entry if same ID, otherwise prepend
+      const existingIdx = sessions.findIndex(s => s.id === id);
+      if (existingIdx >= 0) {
+        sessions[existingIdx] = newSession;
+      } else {
+        sessions.unshift(newSession);
+      }
+      // Limit size to avoid localStorage quota issues
       if (sessions.length > 20) sessions.pop();
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sessions));
     }

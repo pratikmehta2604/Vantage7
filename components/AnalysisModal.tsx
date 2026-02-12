@@ -12,9 +12,9 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
 
   const handleShare = async () => {
     if (!engine.result) return;
-    
+
     const textToShare = `${engine.name} Detailed Analysis\n\n${engine.result}`;
-    
+
     if (navigator.share) {
       try {
         await navigator.share({
@@ -30,33 +30,63 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
     }
   };
 
-  // Simple Markdown parser for bold text and headers
+  // Markdown parser for headers, bold, lists, and rules
+  const renderInline = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, j) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
   const renderMarkdown = (text: string) => {
     return text.split('\n').map((line, i) => {
       // Headers
       if (line.startsWith('### ')) {
-        return <h3 key={i} className="text-lg font-bold text-blue-300 mt-4 mb-2">{line.replace('### ', '')}</h3>;
+        return <h3 key={i} className="text-lg font-bold text-blue-300 mt-4 mb-2">{renderInline(line.replace('### ', ''))}</h3>;
       }
       if (line.startsWith('## ')) {
-        return <h2 key={i} className="text-xl font-bold text-white mt-6 mb-3 border-b border-slate-700 pb-1">{line.replace('## ', '')}</h2>;
+        return <h2 key={i} className="text-xl font-bold text-white mt-6 mb-3 border-b border-slate-700 pb-1">{renderInline(line.replace('## ', ''))}</h2>;
       }
       if (line.startsWith('# ')) {
-        return <h1 key={i} className="text-2xl font-bold text-white mt-2 mb-4">{line.replace('# ', '')}</h1>;
+        return <h1 key={i} className="text-2xl font-bold text-white mt-2 mb-4">{renderInline(line.replace('# ', ''))}</h1>;
       }
+      // Horizontal rule
+      if (line.trim() === '---' || line.trim() === '***') {
+        return <hr key={i} className="border-slate-700 my-4" />;
+      }
+      // Empty line
       if (line.trim() === '') {
         return <div key={i} className="h-2"></div>;
       }
+      // Bullet points (- or *)
+      const bulletMatch = line.match(/^\s*([-*])\s+(.*)/);
+      if (bulletMatch) {
+        const indent = line.match(/^\s*/)?.[0].length || 0;
+        return (
+          <div key={i} className="flex items-start gap-2 mb-1" style={{ paddingLeft: `${Math.min(indent, 4) * 8}px` }}>
+            <span className="text-blue-400 mt-1.5 flex-shrink-0">•</span>
+            <p className="text-slate-300 leading-relaxed">{renderInline(bulletMatch[2])}</p>
+          </div>
+        );
+      }
+      // Numbered lists (1. 2. etc)
+      const numMatch = line.match(/^\s*(\d+)[.)]\s+(.*)/);
+      if (numMatch) {
+        return (
+          <div key={i} className="flex items-start gap-2 mb-1">
+            <span className="text-blue-400 font-mono text-xs mt-1 flex-shrink-0 w-5 text-right">{numMatch[1]}.</span>
+            <p className="text-slate-300 leading-relaxed">{renderInline(numMatch[2])}</p>
+          </div>
+        );
+      }
 
-      // Bold text parsing (**text**)
-      const parts = line.split(/(\*\*.*?\*\*)/g);
+      // Regular paragraph with bold support
       return (
         <p key={i} className="mb-1 text-slate-300 leading-relaxed">
-          {parts.map((part, j) => {
-            if (part.startsWith('**') && part.endsWith('**')) {
-              return <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
-            }
-            return part;
-          })}
+          {renderInline(line)}
         </p>
       );
     });
@@ -65,7 +95,7 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-800">
           <div className="flex items-center space-x-3">
@@ -78,19 +108,19 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-             <button
-               onClick={handleShare}
-               className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-white"
-               title="Share Analysis"
-             >
-               <Share2 className="w-5 h-5" />
-             </button>
-             <button 
-               onClick={onClose}
-               className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-white"
-             >
-               <X className="w-6 h-6" />
-             </button>
+            <button
+              onClick={handleShare}
+              className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-white"
+              title="Share Analysis"
+            >
+              <Share2 className="w-5 h-5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
           </div>
         </div>
 
@@ -103,12 +133,12 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
               <span className="text-emerald-500 font-bold">TOTAL: {engine.usage.totalTokenCount}</span>
             </div>
           )}
-          
+
           <div className="prose prose-invert max-w-none">
             {engine.result ? (
-               <div className="font-mono text-sm">
-                 {renderMarkdown(engine.result)}
-               </div>
+              <div className="font-mono text-sm">
+                {renderMarkdown(engine.result)}
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-64 text-slate-600">
                 <FileText className="w-12 h-12 mb-4 opacity-50" />
@@ -125,10 +155,10 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {engine.sources.map((source, idx) => (
-                  <a 
-                    key={idx} 
-                    href={source.uri} 
-                    target="_blank" 
+                  <a
+                    key={idx}
+                    href={source.uri}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-between p-2 bg-slate-800/50 hover:bg-slate-800 rounded border border-slate-800 transition-colors group"
                   >
@@ -143,7 +173,7 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/50 text-right">
-          <button 
+          <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
           >

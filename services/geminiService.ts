@@ -9,8 +9,6 @@ if (!apiKey) {
   console.error("Gemini API Key is missing. Please add REACT_APP_GEMINI_API_KEY to your .env file.");
 }
 
-const ai = new GoogleGenerativeAI(apiKey || 'missing-key');
-
 // Helper: Delay function for rate limiting
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -56,30 +54,18 @@ export const runEngine = async (
   engineId: EngineId,
   stockName: string,
   userQuery?: string,
-  context?: string
+  context?: string,
+  modelOverride?: string
 ): Promise<EngineResponse> => {
   if (!apiKey || apiKey === 'missing-key') {
     throw new Error("API Key missing. Please check your .env configuration.");
   }
 
   const config = ENGINE_CONFIGS[engineId];
+  const FALLBACK_MODEL = 'gemini-2.5-flash';
 
-  // Model Selection Strategy (MAXIMUM QUALITY):
-  // User Requirement: "No compromise on quality. 1 stock per day is fine."
-  // Strategy: EVERY engine uses 'gemini-3-flash-preview' (Smartest).
-  // Strategy: EVERY engine gets 'googleSearch' (Live Data).
-  // Cost: ~10 Requests per Analysis.
-  // Capacity: ~2 Stocks per Day (20 RPD Limit).
-  // Model Selection Strategy (SINGLE SHOT + HIGH QUOTA):
-  // gemini-3-flash-preview has tight limits (20 RPD).
-  // gemini-1.5-flash has HUGE limits (1500 RPD).
-  // We use 1.5 Flash for reliability.
-
-  // Model Selection Strategy (SINGLE SHOT + SEARCH):
-  // User reported Gemini 3 Flash not working.
-  // Reverting to Gemini 2.5 Flash with Search Enabled.
-
-  const modelId = 'gemini-2.5-flash';
+  // Model: Use override if provided, otherwise default to 2.5 Flash
+  const primaryModel = modelOverride || FALLBACK_MODEL;
 
   const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' });
   let fullPrompt = `CURRENT DATE: ${today}\n\n${config.prompt}\n\nTarget Asset: ${stockName}`;
@@ -95,13 +81,12 @@ export const runEngine = async (
   // Universal Search Enabled for Agents
   const tools = [{ googleSearch: {} }];
 
-  console.log(`[GeminiService] Running ${engineId} on ${modelId} (Tools: ${!!tools})...`);
-
-  try {
+  // --- Core API call helper ---
+  const callGemini = async (modelId: string): Promise<EngineResponse> => {
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({
       model: modelId,
-      tools: tools as any // Cast to any to avoid strict type mismatch for googleSearch
+      tools: tools as any
     });
 
     const result = await withRetry(async () => {
@@ -111,7 +96,6 @@ export const runEngine = async (
     const response = result.response;
     const text = response.text() || "Analysis failed to generate text.";
 
-    // Extract token usage and sources
     const usage: TokenUsage = {
       promptTokenCount: response.usageMetadata?.promptTokenCount || 0,
       candidatesTokenCount: response.usageMetadata?.candidatesTokenCount || 0,
@@ -128,12 +112,110 @@ export const runEngine = async (
     }
 
     return { text, usage, sources };
+  };
 
+  // --- Execute with auto-fallback ---
+  console.log(`[GeminiService] Running ${engineId} on ${primaryModel}...`);
+
+  try {
+    return await callGemini(primaryModel);
   } catch (error: any) {
-    console.error(`Error running engine ${engineId}:`, error);
+    const isQuotaError = error?.message?.includes('429') ||
+      error?.message?.includes('Quota') ||
+      error?.message?.includes('RESOURCE_EXHAUSTED') ||
+      error?.message?.includes('rate limit');
 
-    if (error?.message?.includes('429') || error?.message?.includes('Quota') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
-      throw new Error("Gemini Quota Exceeded. Please try again tomorrow (20 RPD Limit).");
+    // Auto-fallback: if quota hit on non-default model, retry with 2.5 Flash
+    if (isQuotaError && primaryModel !== FALLBACK_MODEL) {
+      console.warn(`[GeminiService] ${primaryModel} quota exceeded for ${engineId}. Falling back to ${FALLBACK_MODEL}...`);
+      try {
+        const fallbackResult = await callGemini(FALLBACK_MODEL);
+        // Prepend a note so the user knows fallback was used
+        fallbackResult.text = `[⚡ Auto-switched to Gemini 2.5 Flash due to quota limits]\n\n${fallbackResult.text}`;
+        return fallbackResult;
+      } catch (fallbackError: any) {
+        console.error(`[GeminiService] Fallback to ${FALLBACK_MODEL} also failed for ${engineId}:`, fallbackError);
+        throw new Error("Gemini Quota Exceeded on both models. Please try again tomorrow.");
+      }
+    }
+
+    if (isQuotaError) {
+      throw new Error("Gemini Quota Exceeded. Please try again tomorrow.");
+    }
+
+    console.error(`Error running engine ${engineId}:`, error);
+    throw error;
+  }
+};
+
+// --- Custom Prompt Runner (for comparison mode etc.) ---
+export const runCustomPrompt = async (
+  prompt: string,
+  modelOverride?: string
+): Promise<EngineResponse> => {
+  if (!apiKey || apiKey === 'missing-key') {
+    throw new Error("API Key missing. Please check your .env configuration.");
+  }
+
+  const FALLBACK_MODEL = 'gemini-2.5-flash';
+  const primaryModel = modelOverride || FALLBACK_MODEL;
+  const tools = [{ googleSearch: {} }];
+
+  const callGemini = async (modelId: string): Promise<EngineResponse> => {
+    const ai = new GoogleGenerativeAI(apiKey);
+    const model = ai.getGenerativeModel({
+      model: modelId,
+      tools: tools as any
+    });
+
+    const result = await withRetry(async () => {
+      return await model.generateContent(prompt);
+    });
+
+    const response = result.response;
+    const text = response.text() || "Analysis failed to generate text.";
+
+    const usage: TokenUsage = {
+      promptTokenCount: response.usageMetadata?.promptTokenCount || 0,
+      candidatesTokenCount: response.usageMetadata?.candidatesTokenCount || 0,
+      totalTokenCount: response.usageMetadata?.totalTokenCount || 0,
+    };
+
+    const sources: WebSource[] = [];
+    if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+      response.candidates[0].groundingMetadata.groundingChunks.forEach((chunk: any) => {
+        if (chunk.web?.uri && chunk.web?.title) {
+          sources.push({ uri: chunk.web.uri, title: chunk.web.title });
+        }
+      });
+    }
+
+    return { text, usage, sources };
+  };
+
+  console.log(`[GeminiService] Running custom prompt on ${primaryModel}...`);
+
+  try {
+    return await callGemini(primaryModel);
+  } catch (error: any) {
+    const isQuotaError = error?.message?.includes('429') ||
+      error?.message?.includes('Quota') ||
+      error?.message?.includes('RESOURCE_EXHAUSTED') ||
+      error?.message?.includes('rate limit');
+
+    if (isQuotaError && primaryModel !== FALLBACK_MODEL) {
+      console.warn(`[GeminiService] ${primaryModel} quota exceeded. Falling back to ${FALLBACK_MODEL}...`);
+      try {
+        const fallbackResult = await callGemini(FALLBACK_MODEL);
+        fallbackResult.text = `[⚡ Auto-switched to Gemini 2.5 Flash due to quota limits]\n\n${fallbackResult.text}`;
+        return fallbackResult;
+      } catch (fallbackError: any) {
+        throw new Error("Gemini Quota Exceeded on both models. Please try again tomorrow.");
+      }
+    }
+
+    if (isQuotaError) {
+      throw new Error("Gemini Quota Exceeded. Please try again tomorrow.");
     }
 
     throw error;

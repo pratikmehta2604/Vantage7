@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { EngineStatus } from '../types';
+import { useToast } from './Toast';
 import {
   Briefcase,
   Cpu,
@@ -12,18 +13,38 @@ import {
   Target,
   Zap,
   DollarSign,
-  BookOpen
+  BookOpen,
+  Copy,
+  Check,
+  Download,
+  MessageCircle
 } from 'lucide-react';
 
 interface FinalReportProps {
   synthesizer: EngineStatus;
   totalTokens: number;
+  modelUsed?: string;
 }
 
-const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens }) => {
+const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, modelUsed }) => {
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
+  const { showToast } = useToast();
+
   if (synthesizer.status !== 'success' || !synthesizer.result) return null;
 
   const rawText = synthesizer.result;
+
+  // Close share menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShowShareMenu(false);
+      }
+    };
+    if (showShareMenu) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showShareMenu]);
 
   // --- Parsing Logic ---
   const extractSection = (header: string, nextHeader?: string): string => {
@@ -52,20 +73,148 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens }) =
 
   // --- Helper Renderers ---
 
+  const renderInline = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, j) =>
+      part.startsWith('**') && part.endsWith('**')
+        ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+        : part
+    );
+  };
+
   const renderMarkdown = (text: string) => {
-    return text.split('\n').map((line, idx) => {
-      // Bold
-      const parts = line.split(/(\*\*.*?\*\*)/g);
-      return (
-        <p key={idx} className="mb-2 text-slate-300 leading-relaxed">
-          {parts.map((part, j) =>
-            part.startsWith('**') && part.endsWith('**')
-              ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
-              : part
-          )}
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // --- Table Detection ---
+      if (line.includes('|') && line.trim().startsWith('|')) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim().startsWith('|')) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        if (tableLines.length >= 2) {
+          // Parse header row
+          const headerCells = tableLines[0].split('|').map(c => c.trim()).filter(c => c);
+          // Skip separator row (---), parse data rows
+          const dataRows = tableLines.slice(2).map(row =>
+            row.split('|').map(c => c.trim()).filter(c => c)
+          );
+
+          elements.push(
+            <div key={`table-${i}`} className="my-4 rounded-xl overflow-hidden border border-slate-700/50">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-800/80">
+                      {headerCells.map((cell, j) => (
+                        <th key={j} className="px-3 py-2.5 text-left text-slate-300 font-bold border-b border-slate-700/50 whitespace-nowrap">
+                          {renderInline(cell)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dataRows.map((row, ri) => (
+                      <tr key={ri} className={`${ri % 2 === 0 ? 'bg-slate-900/50' : 'bg-slate-800/30'} hover:bg-slate-800/60 transition-colors`}>
+                        {row.map((cell, ci) => (
+                          <td key={ci} className="px-3 py-2 text-slate-300 border-b border-slate-800/50 whitespace-nowrap">
+                            {renderInline(cell)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+          continue;
+        }
+      }
+
+      // --- Headers ---
+      const h1Match = line.match(/^#\s+(.*)/);
+      if (h1Match) {
+        elements.push(<h2 key={i} className="text-lg font-bold text-white mt-6 mb-3 pb-2 border-b border-slate-800">{renderInline(h1Match[1])}</h2>);
+        i++;
+        continue;
+      }
+      const h2Match = line.match(/^##\s+(.*)/);
+      if (h2Match) {
+        elements.push(<h3 key={i} className="text-base font-bold text-blue-300 mt-5 mb-2">{renderInline(h2Match[1])}</h3>);
+        i++;
+        continue;
+      }
+      const h3Match = line.match(/^###\s+(.*)/);
+      if (h3Match) {
+        elements.push(<h4 key={i} className="text-sm font-bold text-slate-200 mt-4 mb-1.5">{renderInline(h3Match[1])}</h4>);
+        i++;
+        continue;
+      }
+
+      // Horizontal rule
+      if (line.trim() === '---' || line.trim() === '***') {
+        elements.push(<hr key={i} className="border-slate-700/50 my-5" />);
+        i++;
+        continue;
+      }
+      // Empty line
+      if (line.trim() === '') {
+        elements.push(<div key={i} className="h-1" />);
+        i++;
+        continue;
+      }
+      // Block quote
+      const quoteMatch = line.match(/^>\s*(.*)/);
+      if (quoteMatch) {
+        elements.push(
+          <div key={i} className="border-l-2 border-blue-500/50 pl-3 my-2 text-slate-400 italic text-sm">
+            {renderInline(quoteMatch[1])}
+          </div>
+        );
+        i++;
+        continue;
+      }
+      // Bullet points (- or *)
+      const bulletMatch = line.match(/^\s*([-*])\s+(.*)/);
+      if (bulletMatch) {
+        const indent = line.match(/^\s*/)?.[0].length || 0;
+        elements.push(
+          <div key={i} className="flex items-start gap-2 mb-1.5" style={{ paddingLeft: `${Math.min(indent, 4) * 8}px` }}>
+            <span className="text-blue-400 mt-1 flex-shrink-0 text-[8px]">●</span>
+            <p className="text-slate-300 leading-relaxed text-sm">{renderInline(bulletMatch[2])}</p>
+          </div>
+        );
+        i++;
+        continue;
+      }
+      // Numbered lists
+      const numMatch = line.match(/^\s*(\d+)[.)]\s+(.*)/);
+      if (numMatch) {
+        elements.push(
+          <div key={i} className="flex items-start gap-2 mb-1.5">
+            <span className="text-blue-400 font-mono text-xs mt-0.5 flex-shrink-0 w-5 text-right">{numMatch[1]}.</span>
+            <p className="text-slate-300 leading-relaxed text-sm">{renderInline(numMatch[2])}</p>
+          </div>
+        );
+        i++;
+        continue;
+      }
+      // Regular paragraph
+      elements.push(
+        <p key={i} className="mb-2 text-slate-300 leading-relaxed text-sm">
+          {renderInline(line)}
         </p>
       );
-    });
+      i++;
+    }
+
+    return elements;
   };
 
   const getVerdictColor = (text: string) => {
@@ -79,15 +228,102 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens }) =
 
   const verdictBg = getVerdictColor(finalVerdict || rawText);
 
-  // --- Share Handler ---
-  const handleShare = async () => {
-    const textToShare = `Vantage7 Investment Memo\n\n${rawText.slice(0, 500)}...\n\nRead more at Vantage7.`;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Vantage7 Report', text: textToShare }); } catch (e) { }
-    } else {
-      navigator.clipboard.writeText(rawText);
-      alert('Report copied!');
+  // --- Share Handlers ---
+  const getModelLabel = () => {
+    if (!modelUsed) return null;
+    if (modelUsed.includes('3-flash')) return { label: '3 Flash ✨', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+    if (modelUsed.includes('2.5-flash')) return { label: '2.5 Flash', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
+    return { label: modelUsed.split('-').slice(-2).join(' '), color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
+  };
+
+  const modelBadge = getModelLabel();
+
+  const handleCopyToClipboard = async () => {
+    try {
+      const cleanText = rawText
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/^#{1,3}\s+/gm, '')
+        .replace(/^[-*]\s+/gm, '• ');
+      await navigator.clipboard.writeText(`📊 Vantage7 Investment Memo\n\n${cleanText}\n\n⚠️ Disclaimer: AI-generated analysis. Not SEBI registered. Not financial advice.`);
+      showToast('Report copied to clipboard!', 'success');
+      setShowShareMenu(false);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = rawText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('Report copied to clipboard!', 'success');
+      setShowShareMenu(false);
     }
+  };
+
+  const handleDownloadPDF = () => {
+    // Create a styled printable version
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    // Convert markdown bold to HTML bold for the print version
+    const htmlContent = rawText
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^### (.*$)/gm, '<h3 style="color:#3b82f6;margin-top:16px;">$1</h3>')
+      .replace(/^## (.*$)/gm, '<h2 style="color:#fff;border-bottom:1px solid #334155;padding-bottom:4px;margin-top:20px;">$1</h2>')
+      .replace(/^# (.*$)/gm, '<h1 style="color:#fff;margin-top:8px;">$1</h1>')
+      .replace(/^[-*]\s+(.*$)/gm, '<div style="display:flex;gap:8px;margin:4px 0;"><span style="color:#3b82f6;">•</span><span>$1</span></div>')
+      .replace(/^\d+[.)]\s+(.*$)/gm, '<div style="margin:4px 0;padding-left:8px;">$1</div>')
+      .replace(/^---$/gm, '<hr style="border-color:#334155;margin:16px 0;">')
+      .replace(/\n\n/g, '<br/><br/>')
+      .replace(/\n/g, '<br/>');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Vantage7 Investment Memo</title>
+        <style>
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #cbd5e1; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.6; font-size: 13px; }
+          h1,h2,h3 { color: #e2e8f0; }
+          strong { color: #f1f5f9; }
+          .header { text-align: center; padding: 24px; border-bottom: 2px solid #1e40af; margin-bottom: 24px; }
+          .header h1 { color: #3b82f6; font-size: 24px; margin: 0; }
+          .header p { color: #64748b; font-size: 11px; margin-top: 4px; }
+          .disclaimer { margin-top: 32px; padding: 12px; background: #1e293b; border-radius: 8px; font-size: 10px; color: #64748b; text-align: justify; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>📊 Vantage7 Investment Memo</h1>
+          <p>AI-Powered Equity Research • Generated ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+        </div>
+        ${htmlContent}
+        <div class="disclaimer">
+          <strong>⚠️ AI GENERATED CONTENT. NOT FINANCIAL ADVICE.</strong> The creators are not SEBI registered research analysts. Analysis is based on public data found by AI and may be hallucinated or outdated. Please consult a SEBI registered financial advisor before making investment decisions.
+        </div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    showToast('PDF preview opened — use Save as PDF in print dialog', 'info');
+    setShowShareMenu(false);
+  };
+
+  const handleWhatsAppShare = () => {
+    // Create a concise summary for WhatsApp (max ~1000 chars for readability)
+    const summary = rawText
+      .replace(/\*\*(.*?)\*\*/g, '*$1*') // Convert markdown bold to WhatsApp bold
+      .replace(/^#{1,3}\s+/gm, '')
+      .slice(0, 1200);
+
+    const whatsappText = encodeURIComponent(
+      `📊 *Vantage7 Investment Memo*\n\n${summary}...\n\n⚠️ _Disclaimer: AI-generated analysis. Not SEBI registered. Not financial advice. Consult a qualified advisor._`
+    );
+    window.open(`https://wa.me/?text=${whatsappText}`, '_blank');
+    showToast('Opening WhatsApp...', 'success');
+    setShowShareMenu(false);
   };
 
   // --- Main Render ---
@@ -115,13 +351,70 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens }) =
             </div>
             <div>
               <h2 className="text-xl font-bold text-white">Investment Memo</h2>
-              <p className="text-xs text-slate-500 font-mono">AI Synthesized Strategy</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-slate-500 font-mono">AI Synthesized Strategy</p>
+                {modelBadge && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${modelBadge.color}`}>
+                    {modelBadge.label}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={handleShare} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
-              <Share2 className="w-4 h-4" />
-            </button>
+          <div className="flex gap-2 items-center">
+            {/* Share Dropdown */}
+            <div className="relative" ref={shareMenuRef}>
+              <button
+                onClick={() => setShowShareMenu(!showShareMenu)}
+                className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm ${showShareMenu ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'
+                  }`}
+                title="Share Report"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+
+              {showShareMenu && (
+                <div className="absolute right-0 top-full mt-2 w-52 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up">
+                  <div className="p-1.5">
+                    <button
+                      onClick={handleCopyToClipboard}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-700 transition-colors text-left group"
+                    >
+                      <Copy className="w-4 h-4 text-slate-400 group-hover:text-blue-400" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-200">Copy to Clipboard</p>
+                        <p className="text-[10px] text-slate-500">Full report as text</p>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={handleDownloadPDF}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-700 transition-colors text-left group"
+                    >
+                      <Download className="w-4 h-4 text-slate-400 group-hover:text-purple-400" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-200">Save as PDF</p>
+                        <p className="text-[10px] text-slate-500">Styled for printing</p>
+                      </div>
+                    </button>
+
+                    <div className="border-t border-slate-700 my-1"></div>
+
+                    <button
+                      onClick={handleWhatsAppShare}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-700 transition-colors text-left group"
+                    >
+                      <MessageCircle className="w-4 h-4 text-slate-400 group-hover:text-green-400" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-200">Share on WhatsApp</p>
+                        <p className="text-[10px] text-slate-500">Summary with disclaimer</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="px-3 py-1 bg-slate-800 rounded-lg text-xs font-mono text-slate-500 flex items-center gap-2">
               <Cpu className="w-3 h-3" /> {totalTokens.toLocaleString()}
             </div>
@@ -167,8 +460,6 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens }) =
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* We can fuzzy match subsections here or just render the whole block */}
-          {/* For now, rendering the whole block but styling lists nicely */}
           <div className="md:col-span-2 text-slate-300 text-sm prose prose-invert max-w-none prose-headings:text-blue-300 prose-headings:text-sm prose-headings:font-bold prose-headings:uppercase prose-li:text-slate-300">
             {renderMarkdown(analysis360)}
           </div>
