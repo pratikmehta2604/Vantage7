@@ -19,14 +19,20 @@ import {
   Download,
   MessageCircle
 } from 'lucide-react';
+import {
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
+  RadialBarChart, RadialBar
+} from 'recharts';
+import { AdvancedRealTimeChart } from "react-ts-tradingview-widgets";
 
 interface FinalReportProps {
   synthesizer: EngineStatus;
   totalTokens: number;
   modelUsed?: string;
+  stockSymbol?: string;
 }
 
-const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, modelUsed }) => {
+const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, modelUsed, stockSymbol }) => {
   const [showShareMenu, setShowShareMenu] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
@@ -47,29 +53,65 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
   }, [showShareMenu]);
 
   // --- Parsing Logic ---
-  const extractSection = (header: string, nextHeader?: string): string => {
-    const startIdx = rawText.indexOf(header);
-    if (startIdx === -1) return '';
+  const extractSectionByRegex = (startRegex: RegExp, endRegex?: RegExp): string => {
+    // Strip hidden scores array first so it doesn't leak into text
+    const cleanText = rawText.replace(/\[SCORES:\s*(.*?)\]/i, '').trim();
 
-    const contentStart = startIdx + header.length;
-    let endIdx = rawText.length;
+    const startMatch = cleanText.match(startRegex);
+    if (!startMatch || startMatch.index === undefined) return '';
 
-    if (nextHeader) {
-      const nextIdx = rawText.indexOf(nextHeader, contentStart);
-      if (nextIdx !== -1) endIdx = nextIdx;
+    const contentStart = startMatch.index + startMatch[0].length;
+    let endIdx = cleanText.length;
+
+    if (endRegex) {
+      const remainingText = cleanText.slice(contentStart);
+      const endMatch = remainingText.match(endRegex);
+      if (endMatch && endMatch.index !== undefined) {
+        endIdx = contentStart + endMatch.index;
+      }
     }
 
-    return rawText.slice(contentStart, endIdx).trim();
+    return cleanText.slice(contentStart, endIdx).trim();
   };
 
-  // Extract Core Sections based on new Synthesizer Prompt
-  const execSummary = extractSection('1. **Executive Summary:**', '2. **Strategic Setup');
-  const strategicSetup = extractSection('2. **Strategic Setup', '3. **360 Analysis');
-  const analysis360 = extractSection('3. **360 Analysis:**', '4. **Final Verdict');
-  const finalVerdict = extractSection('4. **Final Verdict:**');
+  // Extract Core Sections (highly permissive to handle AI formatting quirks)
+  const execSummary = extractSectionByRegex(/1\.\s*(?:\*\*)?Executive\s*Summary(?:\*\*)?:?/i, /2\.\s*(?:\*\*)?Strategic\s*Setup/i);
+  const strategicSetup = extractSectionByRegex(/2\.\s*(?:\*\*)?Strategic\s*Setup.*?(:|\*\*)/i, /3\.\s*(?:\*\*)?360\s*Analysis/i);
+  const analysis360 = extractSectionByRegex(/3\.\s*(?:\*\*)?360\s*Analysis.*?(:|\*\*)/i, /4\.\s*(?:\*\*)?Final\s*Verdict/i);
+  const finalVerdict = extractSectionByRegex(/4\.\s*(?:\*\*)?Final\s*Verdict.*?(:|\*\*)/i);
 
-  // Fallback for old/legacy reports
-  const isLegacy = !execSummary && !finalVerdict;
+  // Fallback if parsing missed significant chunks of data
+  const isLegacy = !execSummary || !strategicSetup || !analysis360 || !finalVerdict ||
+    (execSummary.length < 20 && finalVerdict.length < 20);
+
+  // --- Extract Hidden JSON Scores ---
+  const extractScores = () => {
+    const scoreMatch = rawText.match(/\[SCORES:\s*(.*?)\]/i);
+    if (!scoreMatch) return null;
+
+    const parts = scoreMatch[1].split(',').map(p => p.trim());
+    const scores: Record<string, number> = {};
+    parts.forEach(p => {
+      const [key, val] = p.split('=').map(s => s.trim());
+      if (key && val) {
+        scores[key.toLowerCase()] = parseInt(val, 10);
+      }
+    });
+    return scores;
+  };
+
+  const aiScores = extractScores();
+
+  const radarData = aiScores ? [
+    { subject: 'Business', A: aiScores.business || 0, fullMark: 10 },
+    { subject: 'Financials', A: aiScores.financials || 0, fullMark: 10 },
+    { subject: 'Valuation', A: aiScores.valuation || 0, fullMark: 10 },
+    { subject: 'Forensic', A: aiScores.forensic || 0, fullMark: 10 },
+    { subject: 'Technical', A: aiScores.technical || 0, fullMark: 10 },
+  ] : [];
+
+  const convictionScore = aiScores?.conviction || 0;
+  const speedometerData = [{ name: 'Conviction', value: convictionScore, fill: convictionScore >= 7 ? '#10b981' : convictionScore >= 5 ? '#f59e0b' : '#ef4444' }];
 
   // --- Helper Renderers ---
 
@@ -260,54 +302,9 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
   };
 
   const handleDownloadPDF = () => {
-    // Create a styled printable version
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    // Convert markdown bold to HTML bold for the print version
-    const htmlContent = rawText
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/^### (.*$)/gm, '<h3 style="color:#3b82f6;margin-top:16px;">$1</h3>')
-      .replace(/^## (.*$)/gm, '<h2 style="color:#fff;border-bottom:1px solid #334155;padding-bottom:4px;margin-top:20px;">$1</h2>')
-      .replace(/^# (.*$)/gm, '<h1 style="color:#fff;margin-top:8px;">$1</h1>')
-      .replace(/^[-*]\s+(.*$)/gm, '<div style="display:flex;gap:8px;margin:4px 0;"><span style="color:#3b82f6;">•</span><span>$1</span></div>')
-      .replace(/^\d+[.)]\s+(.*$)/gm, '<div style="margin:4px 0;padding-left:8px;">$1</div>')
-      .replace(/^---$/gm, '<hr style="border-color:#334155;margin:16px 0;">')
-      .replace(/\n\n/g, '<br/><br/>')
-      .replace(/\n/g, '<br/>');
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Vantage7 Investment Memo</title>
-        <style>
-          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-          body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #cbd5e1; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.6; font-size: 13px; }
-          h1,h2,h3 { color: #e2e8f0; }
-          strong { color: #f1f5f9; }
-          .header { text-align: center; padding: 24px; border-bottom: 2px solid #1e40af; margin-bottom: 24px; }
-          .header h1 { color: #3b82f6; font-size: 24px; margin: 0; }
-          .header p { color: #64748b; font-size: 11px; margin-top: 4px; }
-          .disclaimer { margin-top: 32px; padding: 12px; background: #1e293b; border-radius: 8px; font-size: 10px; color: #64748b; text-align: justify; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>📊 Vantage7 Investment Memo</h1>
-          <p>AI-Powered Equity Research • Generated ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-        </div>
-        ${htmlContent}
-        <div class="disclaimer">
-          <strong>⚠️ AI GENERATED CONTENT. NOT FINANCIAL ADVICE.</strong> The creators are not SEBI registered research analysts. Analysis is based on public data found by AI and may be hallucinated or outdated. Please consult a SEBI registered financial advisor before making investment decisions.
-        </div>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    showToast('PDF preview opened — use Save as PDF in print dialog', 'info');
+    // Rely on @media print in index.css to format the native window
+    window.print();
+    showToast('Print dialog opened. Select "Save as PDF".', 'info');
     setShowShareMenu(false);
   };
 
@@ -327,16 +324,6 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
   };
 
   // --- Main Render ---
-
-  if (isLegacy) {
-    // Fallback Code (kept simple)
-    return (
-      <div className="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
-        <h3 className="text-xl text-white mb-4">Analysis Report</h3>
-        <div className="prose prose-invert max-w-none text-sm font-mono">{renderMarkdown(rawText)}</div>
-      </div>
-    );
-  }
 
   return (
     <div className="mt-8 space-y-8 animate-fade-in-up">
@@ -420,51 +407,112 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Executive Summary Section */}
-        <div className="mt-4 p-4 bg-slate-950/50 rounded-xl border border-slate-700/50">
-          <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-            <Zap className="w-4 h-4" /> The Elevator Pitch
+      {/* Full Detailed Report (Memo Style) */}
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 p-8 shadow-lg">
+        <div className="prose prose-invert max-w-none text-sm font-mono leading-relaxed prose-headings:text-blue-300">
+          {renderMarkdown(rawText.split(/\[SCORES:/i)[0] || rawText)}
+        </div>
+      </div>
+
+      {/* Visuals Section (If Data Exists) */}
+      {(aiScores || stockSymbol) && (
+        <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 shadow-lg">
+          <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3 border-b border-slate-800 pb-4">
+            <Zap className="w-5 h-5 text-yellow-500" />
+            Quantitative & Technical Dashboard
           </h3>
-          <div className="text-slate-300 text-sm leading-relaxed italic">
-            {renderMarkdown(execSummary)}
+
+          <div className="flex flex-col gap-6">
+            {aiScores && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                <div className="col-span-1 bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col items-center shadow-inner">
+                  <h4 className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 text-center">
+                    <Target className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" /> <span className="hidden sm:inline">Final</span> Conviction
+                  </h4>
+                  <div className="h-40 sm:h-48 w-full relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadialBarChart
+                        cx="50%" cy="100%" innerRadius="70%" outerRadius="100%"
+                        startAngle={180} endAngle={0}
+                        data={speedometerData}
+                      >
+                        <RadialBar background={{ fill: '#1e293b' }} dataKey="value" cornerRadius={10} />
+                      </RadialBarChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-end pb-1 sm:pb-2 pointer-events-none">
+                      <span className="text-xl sm:text-3xl font-bold text-white">{convictionScore}</span>
+                      <span className="text-[9px] sm:text-[10px] text-slate-500 uppercase font-mono mt-0.5 sm:mt-1">/ 10</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-span-1 bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col items-center shadow-inner">
+                  <h4 className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 text-center">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /> 360° Profile
+                  </h4>
+                  <div className="h-40 sm:h-56 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+                        <PolarGrid stroke="#334155" />
+                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} />
+                        <PolarRadiusAxis angle={30} domain={[0, 10]} tick={false} axisLine={false} />
+                        <Radar name="Score" dataKey="A" stroke="#3b82f6" strokeWidth={2} fill="#3b82f6" fillOpacity={0.4} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {stockSymbol && (
+              <div className="w-full bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col shadow-inner">
+                <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 px-2 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-purple-400" />
+                  {stockSymbol.includes(' vs ') ? 'Comparative Technical Charts (Daily)' : 'Technical Chart (Daily)'}
+                </h4>
+
+                {stockSymbol.includes(' vs ') ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {stockSymbol.split(/\s*vs\.?\s*/i).map((sym, idx) => {
+                      const cleanSym = sym.replace('.NS', '').replace('.BO', '').trim();
+                      if (!cleanSym) return null;
+                      return (
+                        <div key={idx} className="h-[300px] sm:h-[400px] w-full rounded-lg overflow-hidden border border-slate-800">
+                          <AdvancedRealTimeChart
+                            symbol={`BSE:${cleanSym}`}
+                            theme="dark"
+                            interval="D"
+                            autosize
+                            hide_side_toolbar={true}
+                            allow_symbol_change={false}
+                            save_image={false}
+                            toolbar_bg="#0f172a"
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="h-[300px] sm:h-[400px] md:h-[500px] lg:h-[600px] w-full rounded-lg overflow-hidden border border-slate-800">
+                    <AdvancedRealTimeChart
+                      symbol={`BSE:${stockSymbol.replace('.NS', '').replace('.BO', '')}`}
+                      theme="dark"
+                      interval="D"
+                      autosize
+                      hide_side_toolbar={false}
+                      allow_symbol_change={true}
+                      save_image={false}
+                      toolbar_bg="#0f172a"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
-      </div>
-
-      {/* Strategic Setup Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800/60 shadow-lg">
-          <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Target className="w-4 h-4" /> Strategic Setup
-          </h3>
-          <div className="text-slate-300 text-sm">{renderMarkdown(strategicSetup)}</div>
-        </div>
-
-        <div className={`bg-gradient-to-br ${verdictBg} p-5 rounded-2xl shadow-lg relative overflow-hidden`}>
-          <div className="absolute inset-0 bg-black/20" />
-          <div className="relative z-10">
-            <h3 className="text-sm font-bold text-white/90 uppercase tracking-wider mb-1 flex items-center gap-2">
-              <DollarSign className="w-4 h-4" /> Final Verdict
-            </h3>
-            <div className="text-white text-sm font-medium mt-2">{renderMarkdown(finalVerdict)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* 360 Analysis (The Meat) */}
-      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
-        <div className="bg-slate-800/50 px-6 py-4 border-b border-slate-800 flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-emerald-400" />
-          <h3 className="text-lg font-bold text-white">360° Deep Dive</h3>
-        </div>
-
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="md:col-span-2 text-slate-300 text-sm prose prose-invert max-w-none prose-headings:text-blue-300 prose-headings:text-sm prose-headings:font-bold prose-headings:uppercase prose-li:text-slate-300">
-            {renderMarkdown(analysis360)}
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Footer / Disclaimer */}
       <div className="flex items-start gap-3 p-4 bg-slate-900/40 rounded-xl border border-slate-800/50">

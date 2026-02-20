@@ -5,12 +5,15 @@
   "dependencies": {
     "@google/genai": "^1.40.0",
     "@google/generative-ai": "^0.24.1",
+    "@types/recharts": "^1.8.29",
     "dotenv": "^17.2.4",
     "firebase": "^10.8.0",
     "lucide-react": "^0.263.1",
     "node-fetch": "^3.3.2",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-ts-tradingview-widgets": "^1.2.8",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

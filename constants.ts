@@ -443,6 +443,11 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
        - **Entry Strategy:** (e.g., "Accumulate via SIP between ₹X - ₹Y", "Wait for dip to ₹Z support level", "Current levels attractive for lump sum").
        - **Key Catalysts (Next 12 months):** List 3 upcoming triggers that could move the stock.
        - **Key Risks (What Could Go Wrong):** List 3 risks that would invalidate the thesis.
+
+    5. **Hidden Scores Array (CRITICAL FOR UI):**
+       - You MUST add this exactly formatted string at the very end of your response on a new line. Do not wrap it in markdown block.
+       - Format: [SCORES: Business=X, Financials=X, Valuation=X, Forensic=X, Technical=X, Conviction=X]
+       - Replace X with an integer from 1 to 10 for each category based on your analysis. (Note: Forensic 10 = extremely clean/safe).
        
     STYLE: Professional, concise, data-driven. Use bold for key numbers. Use emojis sparingly for visual appeal (📈, 🚩, ✅, ⚠️). Avoid fluff and filler text.`
    },
@@ -558,6 +563,11 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
        - **Stop Loss:** Price where thesis is invalid.
        - **Key Catalysts (Next 12 months):** Top 3 triggers.
        - **Key Risks:** Top 3 risks that could go wrong.
+    
+    5. **Hidden Scores Array (CRITICAL FOR UI):**
+       - You MUST add this exactly formatted string at the very end of your response on a new line. Do not wrap it in markdown block.
+       - Format: [SCORES: Business=X, Financials=X, Valuation=X, Forensic=X, Technical=X, Conviction=X]
+       - Replace X with an integer from 1 to 10 for each category based on your analysis. (Note: Forensic 10 = extremely clean/safe).
     
     FORMATTING RULES:
     - Use bold headers (**text**) and clear sections.

@@ -35,6 +35,7 @@ export interface AnalysisRequest {
 
 export interface UserPreferences {
   defaultIncrementalMode: boolean;
+  customWatchlist?: string[];
 }
 
 export interface UserData {

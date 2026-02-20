@@ -114,3 +114,92 @@
 .animate-glow {
     animation: glow 2s ease-in-out infinite;
 }
+
+
+
+@media print {
+    body {
+        background-color: white !important;
+        color: black !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    header,
+    nav,
+    aside,
+    button {
+        display: none !important;
+    }
+
+    .shadow-lg,
+    .shadow-xl,
+    .shadow-2xl,
+    .shadow-inner {
+        box-shadow: none !important;
+    }
+
+    .border,
+    .border-slate-800,
+    .border-slate-700 {
+        border-color: #cbd5e1 !important;
+        border-width: 1px !important;
+    }
+
+    .bg-slate-900,
+    .bg-slate-950,
+    .bg-slate-800,
+    .bg-slate-700 {
+        background-color: transparent !important;
+    }
+
+    .prose {
+        color: black !important;
+    }
+
+    .prose h1,
+    .prose h2,
+    .prose h3,
+    .prose h4,
+    .prose strong,
+    h2,
+    h3,
+    h4 {
+        color: black !important;
+    }
+
+    p,
+    span,
+    div,
+    td,
+    th {
+        color: #334155 !important;
+    }
+
+    /* Keep specific accent colors for emphasis */
+    .text-blue-300,
+    .text-blue-400 {
+        color: #2563eb !important;
+    }
+
+    .text-emerald-400,
+    .text-green-400 {
+        color: #059669 !important;
+    }
+
+    .text-red-400 {
+        color: #dc2626 !important;
+    }
+
+    .text-yellow-400,
+    .text-yellow-500,
+    .text-yellow-600 {
+        color: #d97706 !important;
+    }
+
+    .animate-fade-in-up {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+}

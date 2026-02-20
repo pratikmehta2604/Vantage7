@@ -3,6 +3,7 @@ import { db } from './firebase';
 import firebase from "firebase/compat/app";
 
 const LOCAL_STORAGE_KEY = 'hedgefund_ai_sessions';
+const LOCAL_STORAGE_WATCHLIST_KEY = 'vantage7_custom_watchlist';
 
 // Helper to extract summary data
 const extractMetadata = (engines: Record<EngineId, EngineStatus>) => {
@@ -187,3 +188,51 @@ export const updateUserPreferences = async (userId: string, preferences: Partial
     console.error("Error updating preferences:", e);
   }
 }
+
+// --- Custom Watchlist Management ---
+
+export const getCustomWatchlist = async (userId: string | null): Promise<string[]> => {
+  if (userId && userId !== 'demo-mode-user') {
+    const data = await getUserData(userId);
+    return data?.preferences?.customWatchlist || [];
+  } else {
+    try {
+      const data = localStorage.getItem(LOCAL_STORAGE_WATCHLIST_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+};
+
+export const addToCustomWatchlist = async (userId: string | null, symbol: string): Promise<string[]> => {
+  const current = await getCustomWatchlist(userId);
+  const cleanSymbol = symbol.trim().toUpperCase();
+
+  if (current.includes(cleanSymbol)) return current;
+
+  const updated = [cleanSymbol, ...current];
+
+  if (userId && userId !== 'demo-mode-user') {
+    await updateUserPreferences(userId, { customWatchlist: updated });
+  } else {
+    localStorage.setItem(LOCAL_STORAGE_WATCHLIST_KEY, JSON.stringify(updated));
+  }
+
+  return updated;
+};
+
+export const removeFromCustomWatchlist = async (userId: string | null, symbol: string): Promise<string[]> => {
+  const current = await getCustomWatchlist(userId);
+  const cleanSymbol = symbol.trim().toUpperCase();
+
+  const updated = current.filter(s => s !== cleanSymbol);
+
+  if (userId && userId !== 'demo-mode-user') {
+    await updateUserPreferences(userId, { customWatchlist: updated });
+  } else {
+    localStorage.setItem(LOCAL_STORAGE_WATCHLIST_KEY, JSON.stringify(updated));
+  }
+
+  return updated;
+};
