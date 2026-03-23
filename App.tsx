@@ -386,17 +386,21 @@ const App: React.FC = () => {
       } else {
         // DEEP DIVE MODE (Multi-Agent Loop)
         // Heavy Quota Usage (~12 Requests). Use sparingly (1 Stock/Day).
+        // Accumulate all results locally to avoid stale React closure issues
+        const accumulatedResults: Record<string, { result: string; usage: any; sources: any; error?: string }> = {};
 
         // 1. Planner
         updateEngineStatus('planner', 'loading');
         const plannerRes = await runEngine('planner', stockSymbol, undefined, undefined, geminiModel);
         updateEngineStatus('planner', 'success', plannerRes.text, undefined, plannerRes.usage, plannerRes.sources);
+        accumulatedResults['planner'] = { result: plannerRes.text, usage: plannerRes.usage, sources: plannerRes.sources };
         await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay for 5 RPM cap
 
         // 2. Librarian (Search)
         updateEngineStatus('librarian', 'loading');
         const librarianRes = await runEngine('librarian', stockSymbol, undefined, `PLANNER STRATEGY:\n${plannerRes.text}`, geminiModel);
         updateEngineStatus('librarian', 'success', librarianRes.text, undefined, librarianRes.usage, librarianRes.sources);
+        accumulatedResults['librarian'] = { result: librarianRes.text, usage: librarianRes.usage, sources: librarianRes.sources };
         await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay
 
         const sharedContext = `PLANNER STRATEGY:\n${plannerRes.text}\n\nLIBRARIAN DATA DOSSIER:\n${librarianRes.text}`;
@@ -411,9 +415,11 @@ const App: React.FC = () => {
             const query = id === 'custom' ? userQuery : undefined;
             const result = await runEngine(id, stockSymbol, query, sharedContext, geminiModel);
             updateEngineStatus(id, 'success', result.text, undefined, result.usage, result.sources);
+            accumulatedResults[id] = { result: result.text, usage: result.usage, sources: result.sources };
             workerResults.push({ id, result: result.text });
           } catch (err) {
             updateEngineStatus(id, 'error', null, (err as Error).message);
+            accumulatedResults[id] = { result: `[Analysis Failed: ${(err as Error).message}]`, usage: undefined, sources: undefined, error: (err as Error).message };
             workerResults.push({ id, result: `[Analysis Failed: ${(err as Error).message}]` });
           }
           await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay per specialist
@@ -428,12 +434,30 @@ const App: React.FC = () => {
         updateEngineStatus('synthesizer', 'loading');
         const finalRes = await runEngine('synthesizer', stockSymbol, undefined, synthesisContext, geminiModel);
         updateEngineStatus('synthesizer', 'success', finalRes.text, undefined, finalRes.usage, finalRes.sources);
+        accumulatedResults['synthesizer'] = { result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources };
 
-        // Save — build final state and persist outside setEngines
-        const finalEngines = { ...engines };
-        finalEngines.synthesizer = { ...engines.synthesizer, status: 'success' as const, result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources };
-        setEngines(finalEngines);
+        // Build final state using functional update to merge with latest React state
+        // This preserves all intermediate engine results instead of overwriting with stale closure
+        const finalEngines: Record<EngineId, EngineStatus> = {} as any;
+        setEngines(prev => {
+          const merged = { ...prev };
+          for (const [engineId, data] of Object.entries(accumulatedResults)) {
+            const eid = engineId as EngineId;
+            merged[eid] = {
+              ...merged[eid],
+              status: data.error ? 'error' as const : 'success' as const,
+              result: data.result,
+              usage: data.usage,
+              sources: data.sources,
+              error: data.error,
+            };
+          }
+          Object.assign(finalEngines, merged);
+          return merged;
+        });
 
+        // Wait a tick for state to settle, then save with the accumulated data
+        await new Promise(resolve => setTimeout(resolve, 50));
         const newSession = await saveSession(user.uid, stockSymbol, finalEngines, currentSessionId);
         if (newSession) {
           setHistory(prev => {
