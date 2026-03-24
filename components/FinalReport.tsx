@@ -23,6 +23,9 @@ import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
   RadialBarChart, RadialBar
 } from 'recharts';
+import { ReportChat } from './ReportChat';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { AdvancedRealTimeChart } from "react-ts-tradingview-widgets";
 
 interface FinalReportProps {
@@ -35,6 +38,7 @@ interface FinalReportProps {
 const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, modelUsed, stockSymbol }) => {
   const [showShareMenu, setShowShareMenu] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
+  const reportContainerRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
 
   if (synthesizer.status !== 'success' || !synthesizer.result) return null;
@@ -75,12 +79,21 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
   };
 
   // Extract Core Sections (highly permissive to handle AI formatting quirks)
+  // Supports both old format (4 sections) and new format (6 sections with accountability + forward thesis)
   const execSummary = extractSectionByRegex(/1\.\s*(?:\*\*)?Executive\s*Summary(?:\*\*)?:?/i, /2\.\s*(?:\*\*)?Strategic\s*Setup/i);
   const strategicSetup = extractSectionByRegex(/2\.\s*(?:\*\*)?Strategic\s*Setup.*?(:|\*\*)/i, /3\.\s*(?:\*\*)?360\s*Analysis/i);
-  const analysis360 = extractSectionByRegex(/3\.\s*(?:\*\*)?360\s*Analysis.*?(:|\*\*)/i, /4\.\s*(?:\*\*)?Final\s*Verdict/i);
-  const finalVerdict = extractSectionByRegex(/4\.\s*(?:\*\*)?Final\s*Verdict.*?(:|\*\*)/i);
+  const analysis360 = extractSectionByRegex(/3\.\s*(?:\*\*)?360\s*Analysis.*?(:|\*\*)/i, /(?:4\.\s*(?:\*\*)?(?:📋|Final))/i);
 
-  // Fallback if parsing missed significant chunks of data
+  // New sections: Management Accountability (4) and Forward Thesis (5)
+  const accountability = extractSectionByRegex(/4\.\s*(?:\*\*)?(?:📋\s*)?What\s*They\s*Said/i, /(?:5\.\s*(?:\*\*)?(?:🔮|Next))/i);
+  const forwardThesis = extractSectionByRegex(/5\.\s*(?:\*\*)?(?:🔮\s*)?Next\s*18\s*Months/i, /(?:6\.\s*(?:\*\*)?(?:🎯|Final))/i);
+  const moneyDecision = extractSectionByRegex(/6\.\s*(?:\*\*)?(?:🎯\s*)?The\s*Money\s*Decision/i, /(?:7\.\s*(?:\*\*)?Final\s*Verdict)/i);
+
+  // Final Verdict — handle both old (section 4) and new (section 6) formats
+  const finalVerdict = extractSectionByRegex(/(?:4|6|7)\.\s*(?:\*\*)?Final\s*Verdict.*?(:|\*\*)/i);
+
+  // Fallback if parsing missed significant chunks: accept either old or new format
+  const hasNewSections = accountability && forwardThesis;
   const isLegacy = !execSummary || !strategicSetup || !analysis360 || !finalVerdict ||
     (execSummary.length < 20 && finalVerdict.length < 20);
 
@@ -301,11 +314,64 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
     }
   };
 
-  const handleDownloadPDF = () => {
-    // Rely on @media print in index.css to format the native window
-    window.print();
-    showToast('Print dialog opened. Select "Save as PDF".', 'info');
+  const handleDownloadPDF = async () => {
+    if (!reportContainerRef.current) return;
+    
     setShowShareMenu(false);
+    showToast('Generating PDF... Please wait', 'info');
+    
+    try {
+      // Temporarily add a class to make the export look like a clean document
+      const originalContainer = reportContainerRef.current;
+      originalContainer.classList.add('pdf-export-mode');
+      
+      const canvas = await html2canvas(originalContainer, {
+        scale: 2, // Higher quality
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff', // Force white background for PDF
+        windowWidth: 1200 // Ensure wide enough layout
+      });
+      
+      originalContainer.classList.remove('pdf-export-mode');
+      
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      
+      // Calculate PDF dimensions (A4 size)
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      // Add first page
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+      
+      // Add subsequent pages if content overflows
+      while (heightLeft > 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      const filename = stockSymbol 
+        ? `Vantage7_Analysis_${stockSymbol.replace('.NS', '').replace('.BO', '')}.pdf` 
+        : 'Vantage7_Investment_Memo.pdf';
+        
+      pdf.save(filename);
+      showToast('PDF downloaded successfully!', 'success');
+    } catch (error) {
+      console.error('PDF generation failed:', error);
+      showToast('Failed to generate PDF.', 'error');
+    }
   };
 
   const handleWhatsAppShare = () => {
@@ -326,7 +392,7 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
   // --- Main Render ---
 
   return (
-    <div className="mt-8 space-y-8 animate-fade-in-up">
+    <div id="vantage7-report-container" ref={reportContainerRef} className="mt-8 space-y-8 animate-fade-in-up pdf-target">
 
       {/* Header Card */}
       <div className="relative bg-slate-900 rounded-2xl p-6 border border-slate-800 overflow-hidden shadow-2xl group">
@@ -513,6 +579,9 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
           </div>
         </div>
       )}
+
+      {/* AI Chatbot */}
+      <ReportChat reportText={rawText} stockSymbol={stockSymbol || 'Stock'} />
 
       {/* Footer / Disclaimer */}
       <div className="flex items-start gap-3 p-4 bg-slate-900/40 rounded-xl border border-slate-800/50">

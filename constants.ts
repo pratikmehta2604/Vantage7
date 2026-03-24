@@ -31,6 +31,10 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
        - **Mutual Fund Signal:** Are top mutual funds (SBI, HDFC, ICICI Pru, Axis) increasing or decreasing their holdings?
     5. **Expansion/Capex Pipeline:** Any announced capex plans, new plant commissioning, or geographic expansions?
     6. **Recent Developments (MANDATORY):** Search for and list any material events from the last 90 days — earnings, regulatory actions, management changes, large orders, M&A activity.
+    7. **Management Accountability Framework (CRITICAL — NEW):**
+       - The Librarian MUST search for past Annual Report guidance, concall targets, and management interviews from the last 3 years.
+       - For each major promise (revenue target, margin target, capex milestone, expansion timeline), compare vs actual delivery.
+       - This is the MOST IMPORTANT input for predicting whether current forward guidance is credible.
     
     OUTPUT FORMAT:
     - **SECTOR:** [Sector Name]
@@ -41,7 +45,12 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     - **KEY_METRICS:** [List of 5-7 most critical metrics for this specific sector]
     - **RED_FLAG_CHECKLIST:** [5 specific risks to check for this sector]
     - **PEER_SET:** [List 5-8 closest listed peers on NSE/BSE for comparison]
-    - **SEARCH_QUERIES:** [10 specific, time-bound Google search queries the Librarian should run, e.g. "[Company] Q3 FY26 results", "[Company] latest news March 2026", "[Sector] India outlook 2026"]`
+    - **FORWARD_THESIS_INPUTS:** [Key signals to watch for next 18 months: policy changes, capex commissioning dates, order book execution, TAM inflection points]
+    - **SEARCH_QUERIES:** [12 specific, time-bound Google search queries the Librarian should run, MUST include:
+       - "[Company] annual report FY23 FY24 FY25 guidance targets"
+       - "[Company] management commentary FY23 FY24 actual vs guidance"
+       - "[Company] concall forward guidance FY26 FY27 targets"
+       - Plus 9 other queries like "[Company] Q3 FY26 results", "[Company] latest news March 2026", "[Sector] India outlook 2026"]`
    },
    librarian: {
       name: "Engine 2: The Data Hunter",
@@ -202,11 +211,13 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
        - Free Cash Flow trend. Is FCF positive and growing?
        - Capex as % of CFO — heavy capex could mean future growth OR cash drain.
        
-    6. **Forward Look & Scenarios:**
-       - **Base Case:** Analyst consensus estimates for FY26/27.
-       - **Bull Case:** What could go right? (Market share gains, margin expansion, new orders).
-       - **Bear Case:** What could go wrong? (Demand slowdown, margin compression, debt issues).
+    6. **Forward Look & Scenarios (Link to Management Guidance):**
+       - **Management's Own Targets:** What has the management guided for FY26/FY27? (Revenue, margins, capex completion, order execution).
+       - **Base Case:** Analyst consensus estimates for FY26/27. Does this ALIGN with or DIVERGE from management guidance? If different, explain why.
+       - **Bull Case:** What could go right? (Market share gains, margin expansion, new orders). Quantify upside.
+       - **Bear Case:** What could go wrong? (Demand slowdown, margin compression, debt issues). Quantify downside.
        - Present as a table with Revenue, PAT, and EPS for each scenario.
+       - **Guidance Credibility Check:** Given the "Walk the Talk" data from the Business Analyst, how realistic are current forward estimates? Flag if management has a history of over-promising.
        
     7. **Altman Z-Score (If Non-Banking):**
        - Calculate or estimate the Z-Score. Flag if < 1.8 (distress zone).`
@@ -444,6 +455,8 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     
     TASK: Synthesize a cohesive, actionable Investment Memo. Resolve contradictions between specialists. Weigh evidence objectively.
     
+    CORE PHILOSOPHY (Druckenmiller Principle): "You only make money if you can predict the situation 18 months ahead." Your job is NOT just to summarize the past — it is to build a FORWARD THESIS.
+    
     MANDATORY STRUCTURE (Follow exactly):
     
     1. **Executive Summary:**
@@ -464,28 +477,67 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
        - **Forensic Safety:** Forensic Score (Clean/Caution/Danger), key flags if any. From Auditor.
        - **Technical Setup:** Trend direction, key levels, entry zone, stop loss. From Trader.
        - **If any section contradicts another (e.g., great business but expensive valuation), explicitly call it out and explain how you weigh the tradeoff.**
+
+    4. **📋 What They Said vs What They Did (Management Accountability):**
+       - This section is MANDATORY. Extract from the specialist reports.
+       - Present as a TABLE with these columns:
+         | Period/Source | Management Promise | Actual Delivery | Verdict |
+         - Minimum 4 rows covering the last 2-3 years of guidance.
+         - Use data from concalls, annual reports, management interviews.
+         - Verdict per row: ✅ DELIVERED / ⚠️ PARTIAL / ❌ MISSED
+       - **Guidance Reliability Score:** X/Y promises kept = Z% reliability.
+       - **Pattern:** Is management consistently over-promising, under-promising, or accurately guiding?
        
-    4. **Final Verdict:**
+    5. **🔮 Next 18 Months Playbook (Forward Thesis):**
+       - **What Management Is Promising Now:** List specific, time-bound targets for FY26/FY27 from latest concall/annual report. Flag vague vs concrete promises.
+       - **Market Opportunity Check:** Is the TAM growing, stagnant, or shrinking? Sector tailwinds/headwinds for next 18 months. Competitor landscape shifts.
+       - **Scenario Builder:**
+         - 🟢 **Bull Case (30% probability):** What goes right + Revenue/PAT/EPS estimate + Target Price + Key Trigger
+         - 🟡 **Base Case (50% probability):** Management delivers guidance + market stays benign + Revenue/PAT/EPS estimate + Target Price + Key Trigger
+         - 🔴 **Bear Case (20% probability):** What breaks the thesis + Revenue/PAT/EPS estimate + Target Price + Key Trigger
+       - **"Will They Do What They're Telling?" Verdict:**
+         - Based on Guidance Reliability Score + market opportunity assessment:
+         - 🟢 HIGH CONFIDENCE: Strong track record (>75% delivery) + market tailwind supports thesis
+         - 🟡 MODERATE CONFIDENCE: Mixed track record (50-75%) or market uncertainty exists
+         - 🔴 LOW CONFIDENCE: Poor delivery history (<50%) or market headwinds outweigh promises
+       
+    6. **🎯 The Money Decision:**
+       - **Stock Type (Peter Lynch):** [Fast Grower 🚀 / Stalwart 🏔️ / Cyclical 🔃 / Turnaround 🔄 / Asset Play 📦]
+       - **Smart Money Signal:** ACCUMULATION 🟢 / NEUTRAL 🟡 / DISTRIBUTION 🔴 (insider buying, MF positions, FII/DII flow)
+       - **Convergence Score:** Do fundamentals + technicals + money flow ALL agree? (★★★ Triple / ★★ Partial / ★ Divergent)
+       - **Risk/Reward Ratio:** Bull upside +X% vs Bear downside -Y% = Ratio X:Y (>3:1 = home run)
+       - **Earnings Trust Score:** X/10 (cash conversion + accrual check + tax consistency)
+       - **Compounding Table (₹1 Lakh invested):**
+         | Scenario | Year 1 | Year 3 | Year 5 |
+         | Bull / Base / Bear / Nifty50 benchmark |
+       - **💀 Kill Switch:** The ONE existential threat + early warning signal
+       - **🚨 Thesis Invalidation Triggers:** 3 specific, measurable conditions that mean SELL immediately
+       - **Anti-Bias Check:** What does the market already know? What is OUR unique insight?
+       - **Pattern:** "This company reminds me of [analog] in [year] because [reason]."
+
+    7. **Final Verdict:**
        - **DECISION: STRONG BUY / BUY / WATCHLIST / AVOID / SELL**
        - **Conviction Level:** High / Medium / Low (with reasoning).
        - **Conviction Score: X/10** — Use this rubric:
-         - 9-10: Everything aligns (growth + quality + value + momentum). Rare.
+         - 9-10: Everything aligns (growth + quality + value + momentum + forward thesis + convergence). Rare.
          - 7-8: Strong thesis with minor concerns. Actionable.
          - 5-6: Mixed signals. Watch and wait for better entry or clarity.
          - 3-4: More risks than rewards. Avoid for now.
          - 1-2: Multiple red flags. Stay away.
        - **Target Horizon:** (e.g., "3-5 years for full thesis to play out").
-       - **The One-Line Thesis:** One clear sentence summarizing the investment case.
+       - **The One-Line Thesis:** One clear sentence summarizing the FORWARD investment case (not just what the company is, but where it's going).
        - **Entry Strategy:** (e.g., "Accumulate via SIP between ₹X - ₹Y", "Wait for dip to ₹Z support level", "Current levels attractive for lump sum").
-       - **Key Catalysts (Next 12 months):** List 3 upcoming triggers that could move the stock.
-       - **Key Risks (What Could Go Wrong):** List 3 risks that would invalidate the thesis.
+       - **Suggested Allocation:** 9-10 conviction = Heavy (5-8% portfolio), 7-8 = Core (3-5%), 5-6 = Tracking (1-2%), <5 = Skip.
+       - **Key Catalysts (Next 18 months):** Top 3-5 triggers with approximate timelines.
+       - **Key Risks:** Top 3-5 risks.
+       - **18-Month Summary:** "Based on management's [X%] guidance reliability, [sector tailwind/headwind], [valuation level], and [convergence score], we expect [Company] to [specific outcome] over the next 18 months."
 
-    5. **Hidden Scores Array (CRITICAL FOR UI):**
+    8. **Hidden Scores Array (CRITICAL FOR UI):**
        - You MUST add this exactly formatted string at the very end of your response on a new line. Do not wrap it in markdown block.
        - Format: [SCORES: Business=X, Financials=X, Valuation=X, Forensic=X, Technical=X, Conviction=X]
        - Replace X with an integer from 1 to 10 for each category based on your analysis. (Note: Forensic 10 = extremely clean/safe).
        
-    STYLE: Professional, concise, data-driven. Use bold for key numbers. Use emojis sparingly for visual appeal (📈, 🚩, ✅, ⚠️). Avoid fluff and filler text.`
+    STYLE: Professional, concise, data-driven. Use bold for key numbers. Use emojis sparingly for visual appeal (📈, 🚩, ✅, ⚠️, 🔮, 📋, 🎯, 💀). The Money Decision (section 6) is what separates this from generic broker reports — make it compelling. Avoid fluff.`
    },
    custom: {
       name: "Engine 7: Custom Hypothesis",
@@ -511,7 +563,7 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     YOU MUST USE GOOGLE SEARCH to find all necessary data. Search in English and include "NSE" or "BSE" in queries for Indian stocks.
     
     ## STEP 1: RESEARCH PHASE (Mandatory — Do NOT skip)
-    Perform 12-15 targeted Google Searches. You MUST run ALL of these — do not skip any:
+    Perform 18-22 targeted Google Searches. You MUST run ALL of these — do not skip any:
     
     **Core Financial Data (Run first):**
     - "[Company name] NSE share price market cap PE ratio" — Current valuation snapshot.
@@ -538,18 +590,45 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     - "[Company name] 200 DMA RSI technical analysis support resistance" — Technical setup.
     - "[Company name] stock price chart 1 year trend" — Price action context.
     
+    **FORWARD THESIS (CRITICAL — These searches are MANDATORY for the 18-month outlook):**
+    - "[Company name] annual report FY23 FY24 FY25 guidance targets revenue profit" — Past management guidance to verify delivery.
+    - "[Company name] concall FY24 FY25 management guidance vs actual results" — Did they walk the talk?
+    - "[Company name] concall FY26 FY27 forward guidance targets growth" — What they're promising now.
+    - "[Company name] sector outlook India 2026 2027 market size growth" — Is the market opportunity growing?
+    - "[Company name] new orders wins contracts pipeline FY26" — Visible revenue pipeline.
+    - "[Sector] India policy PLI government tailwind headwind 2026" — Is macro supporting the thesis?
+    
+    **SMART MONEY & INSIDER SIGNALS (CRITICAL for conviction):**
+    - "[Company name] insider buying selling promoter open market purchase" — Strongest signal: insiders buying with own money.
+    - "[Company name] bulk deal block deal NSE BSE" — Large money moves.
+    - "[Company name] mutual fund holding increase decrease top funds" — Which fund managers are buying/selling?
+    - "[Company name] promoter background family other businesses" — Promoter quality check.
+    - "[Company name] CEO MD compensation salary ESOP stock options" — Management incentive alignment.
+    - "[Company name] industry cycle outlook expansion contraction" — Where are we in the business cycle?
+    
     **If a user hypothesis is provided, run 2-3 additional searches specifically to validate or invalidate that claim.**
     
     ## STEP 2: ANALYSIS PHASE (Deep Dive — Use ACTUAL numbers found above)
     
     **2A. THE BUSINESS (McKinsey Style):**
     - What does this company actually do? Explain in 2 simple sentences a layman would understand.
+    - **Peter Lynch Classification (MANDATORY):** Classify this stock as ONE of:
+      - 🚀 **Fast Grower** (20%+ earnings growth, the dream pick)
+      - 🏔️ **Stalwart** (steady 10-15% compounder, safe)
+      - 🔃 **Cyclical** (earnings tied to commodity/economic cycles)
+      - 🔄 **Turnaround** (was struggling, now recovering)
+      - 📦 **Asset Play** (hidden value in balance sheet/real estate/subsidiaries)
+      - 🐌 **Slow Grower** (low growth, dividend play)
     - Revenue breakdown by segment. Which segment is the growth engine?
     - The Moat: Does it have Brand / Network Effect / Cost Advantage / Switching Cost / Regulatory Moat? Rate: WIDE / NARROW / NONE.
     - TAM in India (₹ Crores) and company's market share %.
     - Is revenue Recurring or Cyclical?
     - Management: "Fire in Belly" (cite specific ambitious targets) + "Walk the Talk" (past guidance vs actual — Pass/Fail).
     - **Recent developments (last 90 days)** that affect the business thesis.
+    - **Competitive Response (Who Loses?):**
+      - If this company executes its plan, who loses market share? Name specific competitors.
+      - Will competitors fight back or fold? What's their likely response?
+      - Is this winner-takes-all or coexistence market?
     
     **2B. THE NUMBERS (Fund Manager Style):**
     - Revenue & Profit CAGR (3yr, 5yr). Is growth accelerating or decelerating?
@@ -559,6 +638,11 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     - Cash Flow Quality: CFO/PAT ratio for 3 years. Consistently > 0.8 = Clean. < 0.6 = Red Flag.
     - Working Capital: Are Debtor days or Inventory days increasing?
     - Forward estimates: FY26/27 Revenue, PAT, EPS consensus.
+    - **🔍 Earnings Trust Score (MANDATORY — Rate 1-10):**
+      - Cash Conversion: Is ₹100 reported profit turning into ₹80+ actual cash? (CFO/PAT > 0.8 = good)
+      - Accrual Check: Are receivables growing faster than revenue? (If 2x faster = channel stuffing risk)
+      - Tax Consistency: Is tax paid growing in line with profit growth? (Large gap = non-cash inflation)
+      - **Score: X/10** (8+ = Trust the numbers. 5-7 = Verify. Below 5 = Don't trust the P&L)
     
     **2C. THE WATCHDOG (Forensic Auditor Style):**
     - Cash Flow vs Reported Profit: CFO/PAT check. Red flag if CFO << Profit.
@@ -568,6 +652,16 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     - Contingent Liabilities vs Net Worth ratio.
     - Shareholding: Promoter/FII/DII changes only if MATERIAL (>1% shift).
     - **Forensic Score: CLEAN ✅ / CAUTION ⚠️ / DANGER 🚩**
+    - **👤 Promoter Deep Dive (India-Specific — R. Jhunjhunwala Framework):**
+      - Is promoter BUYING stock in open market? (Strongest bullish signal in Indian markets)
+      - Promoter's other businesses — successful or bleeding cash?
+      - Family dynamics: Succession clarity? Second-gen capable?
+      - Is promoter self-made or inherited? Track record building businesses?
+      - Skin in the game: What % of promoter's net worth is in this stock?
+    - **💰 Management Incentive Check (Munger — "Show me the incentive"):**
+      - How is CEO/MD compensated? Salary vs Stock Options vs Profit-Linked Bonus?
+      - Are ESOPs diluting existing shareholders significantly?
+      - Is management wealth tied to LONG-TERM stock price or SHORT-TERM targets?
     
     **2D. THE PRICE (Valuation Style):**
     - Current P/E vs 5yr Average P/E vs Industry P/E.
@@ -587,14 +681,75 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     - Bollinger Bands: Squeeze or Expansion?
     - **Short-term outlook: Bullish / Bearish / Sideways.**
     
+    **2F. THE FORWARD THESIS (Druckenmiller Style — MOST IMPORTANT SECTION):**
+    This section answers: "What will the situation look like 18 months from now?"
+    
+    **Management Accountability Tracker — "What They Said vs What They Did":**
+    - Search for specific guidance given by management in the last 2-4 Annual Reports and concalls.
+    - For EACH major promise (revenue targets, margin targets, capex milestones, expansion timelines, order book execution):
+      - State the EXACT promise with source (e.g., "FY24 Annual Report: Guided for ₹5,000 Cr revenue by FY25")
+      - State the ACTUAL outcome (e.g., "Actual FY25 Revenue: ₹4,200 Cr")
+      - Verdict: ✅ DELIVERED / ⚠️ PARTIAL (within 10%) / ❌ MISSED
+    - Present as a structured table:
+      | Period/Source | Management Promise | Actual Delivery | Verdict |
+      Minimum 3-4 rows.
+    - **Guidance Reliability Score:** X out of Y promises kept = Z% (e.g., "4/6 = 67%")
+    
+    **Current Forward Promises — "What They're Telling Us Now":**
+    - Extract specific, time-bound targets from the LATEST concall, annual report, or management interview.
+    - For each target, classify as:
+      - 🎯 CONCRETE: Specific number + timeline (e.g., "₹10,000 Cr revenue by FY27")
+      - 💨 VAGUE: Non-committal language (e.g., "We aim to grow significantly")
+    - List at least 3-5 forward promises.
+    
+    **Market Opportunity Validation — "Is the Pie Growing?":**
+    - TAM: Is the Total Addressable Market expanding, flat, or shrinking? Cite industry data.
+    - Market Share: Is company gaining or losing share? Competitor dynamics.
+    - Macro Tailwinds for next 18 months: Government policy (PLI, Budget), RBI stance, global demand cycle.
+    - Macro Headwinds: Regulatory risk, competitive intensity increase, input cost pressure, global slowdown signals.
+    - **Net Macro Assessment: TAILWIND 🟢 / NEUTRAL 🟡 / HEADWIND 🔴**
+    
+    **12-18 Month Scenario Builder:**
+    - 🟢 **Bull Case (30% probability):**
+      What goes right (specific triggers). Revenue/PAT/EPS estimate. Target Price. Key trigger to watch.
+    - 🟡 **Base Case (50% probability):**
+      Management delivers guidance, market benign. Revenue/PAT/EPS estimate. Target Price. Key trigger to watch.
+    - 🔴 **Bear Case (20% probability):**
+      What breaks the thesis (specific risks). Revenue/PAT/EPS estimate. Target Price. Key trigger to watch.
+    
+    **📡 Smart Money Radar:**
+    - **Insider Activity:** Is promoter/management buying stock with own money in open market? (STRONGEST signal)
+    - **Institutional Flow:** Are top mutual fund managers (Nilesh Shah, Rajeev Thakkar level) accumulating?
+    - **FII vs DII:** Who's buying, who's selling? FII selling + DII buying = potential bottom.
+    - **Bulk/Block Deals:** Any large transactions in last 90 days?
+    - **Smart Money Verdict: ACCUMULATION 🟢 / NEUTRAL 🟡 / DISTRIBUTION 🔴**
+    
+    **🔄 Cycle Position (Howard Marks Framework):**
+    - Where is this SECTOR in its cycle? EARLY CYCLE (just turning) / MID CYCLE (growing) / LATE CYCLE (peaking) / DOWNCYCLE (declining)?
+    - Is the company in an EARNINGS UPGRADE cycle (analyst estimates going UP) or DOWNGRADE cycle?
+    - Credit cycle position: Expansion (tailwind) or Tightening (headwind)?
+    
+    **💀 The Kill Switch (Munger Inversion — MANDATORY):**
+    Invert the thesis. Answer: "If I wanted to SHORT this stock and destroy this company, what would I do?"
+    - State the SINGLE biggest existential threat (not generic risks, but the ONE thing that kills it)
+    - How likely is this threat? Rate: LOW / MEDIUM / HIGH probability
+    - Would you see it coming in time to exit? Early Warning Signal: ___
+    
+    **"Will They Do What They're Telling?" — Final Forward Verdict:**
+    Based on Guidance Reliability Score + Market Opportunity Assessment + current promises:
+    - 🟢 HIGH CONFIDENCE: Track record >75% delivery + market tailwind supports thesis. They've done it before, market is with them.
+    - 🟡 MODERATE CONFIDENCE: Mixed track record (50-75%) OR market uncertainty. Wait for one more quarter of confirmation.
+    - 🔴 LOW CONFIDENCE: Poor delivery (<50%) OR clear market headwinds. Promises exceed capability or opportunity.
+    
     ## STEP 3: FINAL OUTPUT (Investment Memo)
 
     MANDATORY NARRATIVE FLOW (Do not deviate):
     
     1. **Executive Summary:**
-       - Elevator pitch in 3-4 lines: What, Why now, Verdict.
+       - Elevator pitch in 3-4 lines: What, Why now, Where is it going in 18 months, Verdict.
        - Include: CMP, Market Cap, P/E, 1yr Return.
        - **Macro context:** How do current market conditions (interest rates, FII flows, sector rotation) affect this stock?
+       - **Forward Signal:** One line on what the next 18 months looks like based on 2F analysis.
     
     2. **Strategic Setup:**
        - Sector classification.
@@ -609,17 +764,57 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
        - **Valuation:** Current vs Fair Value. Forward multiples. PEG. Verdict.
        - **Technical:** Trend, key levels, entry zone, stop loss.
     
-    4. **Final Verdict:**
+    4. **📋 What They Said vs What They Did (Management Accountability):**
+       - The Management Accountability Table from 2F analysis.
+       - Guidance Reliability Score.
+       - Pattern observation: Over-promiser / Under-promiser / Accurate guider.
+    
+    5. **🔮 Next 18 Months Playbook (Forward Thesis):**
+       - What management is promising now (concrete vs vague targets).
+       - Market Opportunity Assessment (Tailwind/Neutral/Headwind).
+       - Bull / Base / Bear scenarios with Revenue/PAT/EPS and Target Prices.
+       - "Will They Do What They're Telling?" Verdict (🟢/🟡/🔴).
+       - **18-Month Summary:** "Based on management's [X%] guidance reliability, [sector tailwind/headwind], and [valuation level], we expect [Company] to [specific outcome] over the next 18 months."
+    
+    6. **🎯 The Money Decision (Partner's Desk):**
+       - **Peter Lynch Type:** [Fast Grower / Stalwart / Cyclical / Turnaround / Asset Play / Slow Grower]
+       - **Convergence Check:**
+         ├── Fundamental Thesis: BULLISH/BEARISH/NEUTRAL
+         ├── Technical Setup: BULLISH/BEARISH/NEUTRAL
+         ├── Smart Money Flow: ACCUMULATION/NEUTRAL/DISTRIBUTION
+         └── CONVERGENCE: ★★★ TRIPLE ALIGNED (if all agree) / ★★ PARTIAL / ★ DIVERGENT
+       - **Asymmetric Risk/Reward:**
+         Bull case upside: +X% | Bear case downside: -Y% | **Ratio: X:Y** (Above 3:1 = home run, 2:1 = good bet, below 1.5:1 = skip)
+       - **Compounding Calculator (What ₹1 Lakh becomes):**
+         | Scenario | Year 1 | Year 3 | Year 5 |
+         | Bull | ₹___ | ₹___ | ₹___ |
+         | Base | ₹___ | ₹___ | ₹___ |
+         | Bear | ₹___ | ₹___ | ₹___ |
+         | Nifty50 (12% CAGR) | ₹1,12,000 | ₹1,40,000 | ₹1,76,000 |
+       - **Anti-Bias Check (Honest self-assessment):**
+         - Is this thesis based on solid multi-year data OR just 1-2 recent quarters? (Recency bias check)
+         - What does the MARKET already know that we know? (Consensus vs Contrarian)
+         - What is our UNIQUE INSIGHT that the market is missing? State it in one sentence.
+       - **Pattern Recognition:** "This company reminds me of [Historical Analog] which was at a similar stage in [Year]. What happened: [outcome]."
+       - **🚨 Thesis Invalidation Triggers (When to SELL — write these down!):**
+         State 3 specific, measurable conditions that would KILL this thesis:
+         1. "[Specific metric] drops below [threshold]" (e.g., ROCE < 12% for 2 quarters)
+         2. "[Specific event]" (e.g., Promoter pledging exceeds 15%)
+         3. "[Specific market condition]" (e.g., Sector deregulation removing pricing power)
+
+    7. **Final Verdict:**
        - **FINAL DECISION: [STRONG BUY / BUY / WATCHLIST / AVOID / SELL]**
        - **Conviction Score: X/10** (9-10: Rare alignment. 7-8: Strong. 5-6: Mixed. 3-4: Weak. 1-2: Avoid.)
-       - **The "One-Line" Thesis:** One clear sentence.
+       - **The "One-Line" Thesis:** One sentence about WHERE THIS COMPANY IS HEADED and WHY the market is wrong about it.
        - **Entry Strategy:** (e.g., "SIP at current levels", "Wait for dip to ₹___")
-       - **Target Price:** 1-year and 3-year target.
+       - **Target Price:** 1-year and 3-year target (derived from scenario analysis).
        - **Stop Loss:** Price where thesis is invalid.
-       - **Key Catalysts (Next 12 months):** Top 3 triggers.
-       - **Key Risks:** Top 3 risks that could go wrong.
+       - **Suggested Allocation:** Based on conviction: 9-10 = Heavy (5-8% portfolio), 7-8 = Core (3-5%), 5-6 = Tracking (1-2%), <5 = Skip.
+       - **Key Catalysts (Next 18 months):** Top 3-5 triggers with approximate timelines.
+       - **Key Risks:** Top 3-5 risks that could go wrong.
+       - **The Kill Switch:** The ONE thing that destroys this thesis + early warning signal to watch.
     
-    5. **Hidden Scores Array (CRITICAL FOR UI):**
+    8. **Hidden Scores Array (CRITICAL FOR UI):**
        - You MUST add this exactly formatted string at the very end of your response on a new line. Do not wrap it in markdown block.
        - Format: [SCORES: Business=X, Financials=X, Valuation=X, Forensic=X, Technical=X, Conviction=X]
        - Replace X with an integer from 1 to 10 for each category based on your analysis. (Note: Forensic 10 = extremely clean/safe).
@@ -628,9 +823,10 @@ export const ENGINE_CONFIGS: Record<EngineId, { name: string; role: string; prom
     - Use bold headers (**text**) and clear sections.
     - Use bullet points for easy scanning.
     - Include actual ₹ numbers — not vague statements.
-    - Use emojis to make the report visually engaging: 📈 🚩 ✅ ⚠️ 💰 🎯 🔍
+    - Use emojis to make the report visually engaging: 📈 🚩 ✅ ⚠️ 💰 🎯 🔍 🔮 📋
     - If you could not find specific data, say "Data Not Available" — NEVER hallucinate numbers.
-    - All financial figures in ₹ Crores unless otherwise noted.`
+    - All financial figures in ₹ Crores unless otherwise noted.
+    - The Forward Thesis sections (4 & 5) are the MOST IMPORTANT part of the report. Do NOT skip or abbreviate them.`
    }
 };
 

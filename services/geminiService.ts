@@ -221,3 +221,42 @@ export const runCustomPrompt = async (
     throw error;
   }
 };
+
+// --- Chat with Report Context (for AI Chatbot) ---
+export const runChatWithContext = async (
+  reportText: string,
+  stockSymbol: string,
+  userQuestion: string,
+  chatHistory?: string
+): Promise<EngineResponse> => {
+  const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' });
+  
+  let prompt = `CURRENT DATE: ${today}
+
+You are the AI Investment Partner at Vantage7. You have already completed a comprehensive analysis of ${stockSymbol}. The full investment memo is provided below.
+
+FULL INVESTMENT MEMO:
+${reportText}
+
+RULES:
+- Answer the user's question using the data and analysis from the memo above.
+- Be direct, concise, and data-driven. Lead with the answer.
+- Use actual numbers (₹ Crores, %, ratios) from the memo — don't be vague.
+- If the question requires information NOT in the memo, use Google Search to find current data.
+- If you need to update or correct something from the memo, clearly state what changed and why.
+- Keep responses under 300 words unless the question requires detailed analysis.
+- End with: "**Impact on Thesis:** [How this affects the investment decision]"
+`;
+
+  if (chatHistory) {
+    prompt += `
+PREVIOUS CONVERSATION:
+${chatHistory}
+`;
+  }
+
+  prompt += `
+USER QUESTION: ${userQuestion}`;
+
+  return runCustomPrompt(prompt);
+};

@@ -9,6 +9,7 @@ import EngineCard from './components/EngineCard';
 import FinalReport from './components/FinalReport';
 import AnalysisModal from './components/AnalysisModal';
 import HistorySidebar from './components/HistorySidebar';
+import { PortfolioMonitor } from './components/PortfolioMonitor';
 import { MiniChart } from "react-ts-tradingview-widgets";
 import {
   FileText,
@@ -19,7 +20,7 @@ import {
   Terminal,
   Activity,
   Layers,
-  BookOpen, BrainCircuit, AlertTriangle, ShieldAlert, LogIn, LogOut, User as UserIcon, Lock, History as HistoryIcon, Trash2, TrendingUp
+  BookOpen, BrainCircuit, AlertTriangle, ShieldAlert, LogIn, LogOut, User as UserIcon, Lock, History as HistoryIcon, Trash2, TrendingUp, Briefcase
 } from 'lucide-react';
 
 // Initial state builder
@@ -49,7 +50,7 @@ const App: React.FC = () => {
   const [selectedEngine, setSelectedEngine] = useState<EngineStatus | null>(null);
   const [scanMode, setScanMode] = useState<'quick' | 'deep'>('quick');
   const [geminiModel, setGeminiModel] = useState<string>('gemini-2.5-flash');
-  const [currentView, setCurrentView] = useState<'home' | 'history' | 'markets'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'history' | 'markets' | 'portfolio'>('home');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
 
   // History State
@@ -534,6 +535,12 @@ const App: React.FC = () => {
                   >
                     <HistoryIcon className="w-4 h-4" /> History
                   </button>
+                  <button
+                    onClick={() => setCurrentView('portfolio')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${currentView === 'portfolio' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    <Briefcase className="w-4 h-4" /> Portfolio
+                  </button>
                 </div>
               )}
             </div>
@@ -583,7 +590,19 @@ const App: React.FC = () => {
           </header>
 
           <div className="max-w-6xl mx-auto mt-6">
-            {currentView === 'history' ? (
+            {currentView === 'portfolio' ? (
+              <PortfolioMonitor
+                history={history}
+                onLoadSession={handleLoadSession}
+                onRefreshSession={(symbol) => {
+                  const session = history.find(s => s.symbol === symbol);
+                  if (session) {
+                    handleLoadSession(session);
+                    setOnlyNewInfo(true);
+                  }
+                }}
+              />
+            ) : currentView === 'history' ? (
               <div className="animate-fade-in-up">
                 <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
@@ -760,7 +779,7 @@ const App: React.FC = () => {
                 {history.filter(s => {
                   if (!s.engines.synthesizer?.result) return false;
                   const text = s.engines.synthesizer.result.toLowerCase();
-                  const match = text.match(/4\.\s*(?:\*\*)?final\s*verdict.*?(:|\*\*)?/i);
+                  const match = text.match(/(?:4|6|7)\.\s*(?:\*\*)?final\s*verdict.*?(:|\*\*)?/i);
                   if (!match) return false;
                   const remaining = text.slice(match.index);
                   return remaining.includes('strong buy') || (remaining.includes('buy') && !remaining.includes('strong buy'));
@@ -774,12 +793,12 @@ const App: React.FC = () => {
                         {history.filter(s => {
                           if (!s.engines.synthesizer?.result) return false;
                           const text = s.engines.synthesizer.result.toLowerCase();
-                          const match = text.match(/4\.\s*(?:\*\*)?final\s*verdict.*?(:|\*\*)?/i);
+                          const match = text.match(/(?:4|6|7)\.\s*(?:\*\*)?final\s*verdict.*?(:|\*\*)?/i);
                           if (!match) return false;
                           const remaining = text.slice(match.index);
                           return remaining.includes('strong buy') || (remaining.includes('buy') && !remaining.includes('strong buy'));
                         }).slice(0, 6).map(session => {
-                          const remaining = session.engines.synthesizer!.result!.toLowerCase().slice(session.engines.synthesizer!.result!.toLowerCase().match(/4\.\s*(?:\*\*)?final\s*verdict.*?(:|\*\*)?/i)!.index);
+                          const remaining = session.engines.synthesizer!.result!.toLowerCase().slice(session.engines.synthesizer!.result!.toLowerCase().match(/(?:4|6|7)\.\s*(?:\*\*)?final\s*verdict.*?(:|\*\*)?/i)!.index);
                           const isStrong = remaining.includes('strong buy');
 
                           const verdictColor = isStrong ? 'border-emerald-500/50' : 'border-green-500/50';

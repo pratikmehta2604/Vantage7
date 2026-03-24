@@ -203,3 +203,38 @@
         transform: none !important;
     }
 }
+
+/* PDF Export Styles */
+.pdf-export-mode {
+  background-color: white !important;
+  color: black !important;
+  padding: 40px !important;
+}
+
+.pdf-export-mode * {
+  color: #1e293b !important; /* slate-800 */
+}
+
+.pdf-export-mode h1, 
+.pdf-export-mode h2, 
+.pdf-export-mode h3, 
+.pdf-export-mode strong {
+  color: #0f172a !important; /* slate-900 */
+  font-weight: 700 !important;
+}
+
+.pdf-export-mode .bg-slate-900, 
+.pdf-export-mode .bg-slate-950,
+.pdf-export-mode .bg-slate-800 {
+  background-color: transparent !important;
+  border-color: #cbd5e1 !important; /* slate-300 */
+}
+
+.pdf-export-mode .text-slate-400,
+.pdf-export-mode .text-slate-500 {
+  color: #475569 !important; /* slate-600 */
+}
+
+.pdf-export-mode button {
+  display: none !important; /* Hide actionable buttons like share/copy */
+}
