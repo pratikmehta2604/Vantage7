@@ -1,4 +1,4 @@
-import { AnalysisSession, EngineId, EngineStatus, UserData, UserPreferences } from '../types';
+import { AnalysisSession, AnalysisContext, EngineId, EngineStatus, UserData, UserPreferences } from '../types';
 import { db } from './firebase';
 import firebase from "firebase/compat/app";
 
@@ -43,7 +43,7 @@ const getLocalSessionsInternal = (): AnalysisSession[] => {
   }
 };
 
-export const saveSession = async (userId: string | null, symbol: string, engines: Record<EngineId, EngineStatus>, existingId?: string): Promise<AnalysisSession | null> => {
+export const saveSession = async (userId: string | null, symbol: string, engines: Record<EngineId, EngineStatus>, existingId?: string, context?: AnalysisContext): Promise<AnalysisSession | null> => {
   try {
     const totalTokens = Object.values(engines).reduce((acc, e) => acc + (e.usage?.totalTokenCount || 0), 0);
     const { verdict, summary } = extractMetadata(engines);
@@ -52,11 +52,12 @@ export const saveSession = async (userId: string | null, symbol: string, engines
     const newSession: AnalysisSession = {
       id,
       symbol: symbol.toUpperCase(),
-      timestamp: existingId ? Date.now() : Date.now(), // Update timestamp on edit? Yes.
+      timestamp: existingId ? Date.now() : Date.now(),
       engines,
       totalTokens,
       verdict,
-      summary
+      summary,
+      context: context || undefined,
     };
 
     // If real user (and not demo mode), save to Firestore

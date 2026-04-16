@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { EngineId, EngineStatus, AnalysisSession } from './types';
+import { EngineId, EngineStatus, AnalysisSession, AnalysisContext } from './types';
 import { ENGINE_CONFIGS, COMPARISON_PROMPT } from './constants';
 import { runEngine, runCustomPrompt } from './services/geminiService';
 import { saveSession, getSessions, deleteSession, saveUser, getUserData, updateUserPreferences, getCustomWatchlist, addToCustomWatchlist, removeFromCustomWatchlist } from './services/storageService';
@@ -10,6 +10,7 @@ import FinalReport from './components/FinalReport';
 import AnalysisModal from './components/AnalysisModal';
 import HistorySidebar from './components/HistorySidebar';
 import { PortfolioMonitor } from './components/PortfolioMonitor';
+import PreAnalysisModal from './components/PreAnalysisModal';
 import { MiniChart } from "react-ts-tradingview-widgets";
 import {
   FileText,
@@ -20,7 +21,7 @@ import {
   Terminal,
   Activity,
   Layers,
-  BookOpen, BrainCircuit, AlertTriangle, ShieldAlert, LogIn, LogOut, User as UserIcon, Lock, History as HistoryIcon, Trash2, TrendingUp, Briefcase
+  BookOpen, BrainCircuit, AlertTriangle, ShieldAlert, LogIn, LogOut, User as UserIcon, Lock, History as HistoryIcon, Trash2, TrendingUp, Briefcase, Gauge
 } from 'lucide-react';
 
 // Initial state builder
@@ -59,6 +60,31 @@ const App: React.FC = () => {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [customWatchlist, setCustomWatchlist] = useState<string[]>([]);
   const [newWatchlistSymbol, setNewWatchlistSymbol] = useState('');
+
+  // Pre-Analysis Context Modal
+  const [showContextModal, setShowContextModal] = useState(false);
+  const [analysisContext, setAnalysisContext] = useState<AnalysisContext | undefined>(undefined);
+  const [pendingAnalysisEvent, setPendingAnalysisEvent] = useState<React.FormEvent | null>(null);
+
+  // API Usage Counter (localStorage, resets daily)
+  const USAGE_KEY = 'v7_api_usage';
+  const [apiCallsToday, setApiCallsToday] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem(USAGE_KEY);
+      if (!stored) return 0;
+      const { date, count } = JSON.parse(stored);
+      const today = new Date().toDateString();
+      return date === today ? count : 0;
+    } catch { return 0; }
+  });
+
+  const incrementApiUsage = () => {
+    setApiCallsToday(prev => {
+      const newCount = prev + 1;
+      localStorage.setItem(USAGE_KEY, JSON.stringify({ date: new Date().toDateString(), count: newCount }));
+      return newCount;
+    });
+  };
 
   // Auth Listener (Compat SDK)
   useEffect(() => {
@@ -298,10 +324,21 @@ const App: React.FC = () => {
 
     if (!stockSymbol.trim()) return;
 
+    // Show pre-analysis context modal on first run (not when called programmatically after modal)
+    if (!pendingAnalysisEvent) {
+      setPendingAnalysisEvent(e);
+      setShowContextModal(true);
+      return;
+    }
+
+    // ─── Modal was confirmed/skipped — proceed with analysis ───
+    setPendingAnalysisEvent(null);
+    setShowContextModal(false);
     setIsAnalyzing(true);
     setGlobalError(null);
     setCurrentSessionId(undefined);
     setEngines(buildInitialState());
+
 
     try {
       // --- Comparison Mode Detection ---
@@ -313,7 +350,8 @@ const App: React.FC = () => {
 
         // Step 1: Analyze Stock A
         updateEngineStatus('planner', 'loading');
-        const resA = await runEngine('comprehensive', stockA, undefined, undefined, geminiModel);
+        const resA = await runEngine('comprehensive', stockA, undefined, undefined, geminiModel, analysisContext);
+        incrementApiUsage();
         updateEngineStatus('planner', 'success', `Analysis of ${stockA} complete`, undefined, resA.usage, resA.sources);
 
         // 15s delay for rate limiting
@@ -321,7 +359,8 @@ const App: React.FC = () => {
 
         // Step 2: Analyze Stock B
         updateEngineStatus('librarian', 'loading');
-        const resB = await runEngine('comprehensive', stockB, undefined, undefined, geminiModel);
+        const resB = await runEngine('comprehensive', stockB, undefined, undefined, geminiModel, analysisContext);
+        incrementApiUsage();
         updateEngineStatus('librarian', 'success', `Analysis of ${stockB} complete`, undefined, resB.usage, resB.sources);
 
         // 15s delay
@@ -344,7 +383,7 @@ const App: React.FC = () => {
         };
         setEngines(finalEngines);
 
-        const newSession = await saveSession(user.uid, `${stockA} vs ${stockB}`, finalEngines, currentSessionId);
+        const newSession = await saveSession(user.uid, `${stockA} vs ${stockB}`, finalEngines, currentSessionId, analysisContext);
         if (newSession) {
           setHistory(prev => {
             const filtered = prev.filter(s => s.id !== newSession.id && s.symbol !== newSession.symbol);
@@ -358,7 +397,8 @@ const App: React.FC = () => {
         // Solves Rate Limit (15 RPM) and Quota (20 RPD) issues permanently.
         updateEngineStatus('comprehensive', 'loading');
 
-        const result = await runEngine('comprehensive', stockSymbol, userQuery, undefined, geminiModel);
+        const result = await runEngine('comprehensive', stockSymbol, userQuery, undefined, geminiModel, analysisContext);
+        incrementApiUsage();
 
         updateEngineStatus('comprehensive', 'success', result.text, undefined, result.usage, result.sources);
 
@@ -374,7 +414,7 @@ const App: React.FC = () => {
         setEngines(finalEngines);
 
         // Auto-save
-        const newSession = await saveSession(user.uid, stockSymbol, finalEngines, currentSessionId);
+        const newSession = await saveSession(user.uid, stockSymbol, finalEngines, currentSessionId, analysisContext);
         if (newSession) {
           setHistory(prev => {
             // Deduplicate by both ID and symbol
@@ -392,14 +432,16 @@ const App: React.FC = () => {
 
         // 1. Planner
         updateEngineStatus('planner', 'loading');
-        const plannerRes = await runEngine('planner', stockSymbol, undefined, undefined, geminiModel);
+        const plannerRes = await runEngine('planner', stockSymbol, undefined, undefined, geminiModel, analysisContext);
+        incrementApiUsage();
         updateEngineStatus('planner', 'success', plannerRes.text, undefined, plannerRes.usage, plannerRes.sources);
         accumulatedResults['planner'] = { result: plannerRes.text, usage: plannerRes.usage, sources: plannerRes.sources };
         await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay for 5 RPM cap
 
         // 2. Librarian (Search)
         updateEngineStatus('librarian', 'loading');
-        const librarianRes = await runEngine('librarian', stockSymbol, undefined, `PLANNER STRATEGY:\n${plannerRes.text}`, geminiModel);
+        const librarianRes = await runEngine('librarian', stockSymbol, undefined, `PLANNER STRATEGY:\n${plannerRes.text}`, geminiModel, analysisContext);
+        incrementApiUsage();
         updateEngineStatus('librarian', 'success', librarianRes.text, undefined, librarianRes.usage, librarianRes.sources);
         accumulatedResults['librarian'] = { result: librarianRes.text, usage: librarianRes.usage, sources: librarianRes.sources };
         await new Promise(resolve => setTimeout(resolve, 15000)); // 15s Delay
@@ -414,7 +456,8 @@ const App: React.FC = () => {
           updateEngineStatus(id, 'loading');
           try {
             const query = id === 'custom' ? userQuery : undefined;
-            const result = await runEngine(id, stockSymbol, query, sharedContext, geminiModel);
+            const result = await runEngine(id, stockSymbol, query, sharedContext, geminiModel, analysisContext);
+            incrementApiUsage();
             updateEngineStatus(id, 'success', result.text, undefined, result.usage, result.sources);
             accumulatedResults[id] = { result: result.text, usage: result.usage, sources: result.sources };
             workerResults.push({ id, result: result.text });
@@ -433,7 +476,8 @@ const App: React.FC = () => {
           .join('\n');
 
         updateEngineStatus('synthesizer', 'loading');
-        const finalRes = await runEngine('synthesizer', stockSymbol, undefined, synthesisContext, geminiModel);
+        const finalRes = await runEngine('synthesizer', stockSymbol, undefined, synthesisContext, geminiModel, analysisContext);
+        incrementApiUsage();
         updateEngineStatus('synthesizer', 'success', finalRes.text, undefined, finalRes.usage, finalRes.sources);
         accumulatedResults['synthesizer'] = { result: finalRes.text, usage: finalRes.usage, sources: finalRes.sources };
 
@@ -459,7 +503,7 @@ const App: React.FC = () => {
 
         // Wait a tick for state to settle, then save with the accumulated data
         await new Promise(resolve => setTimeout(resolve, 50));
-        const newSession = await saveSession(user.uid, stockSymbol, finalEngines, currentSessionId);
+        const newSession = await saveSession(user.uid, stockSymbol, finalEngines, currentSessionId, analysisContext);
         if (newSession) {
           setHistory(prev => {
             // Deduplicate by both ID and symbol
@@ -496,6 +540,18 @@ const App: React.FC = () => {
       updateEngineStatus('linkedin', 'success', linkedInRes.text, undefined, linkedInRes.usage, linkedInRes.sources);
     } catch (e) {
       updateEngineStatus('linkedin', 'error', null, (e as Error).message);
+    }
+  };
+
+  const handleStorytellerGen = async () => {
+    if (!engines.synthesizer.result) return;
+
+    try {
+      updateEngineStatus('storyteller', 'loading');
+      const storyRes = await runEngine('storyteller', stockSymbol, undefined, engines.synthesizer.result, geminiModel);
+      updateEngineStatus('storyteller', 'success', storyRes.text, undefined, storyRes.usage, storyRes.sources);
+    } catch (e) {
+      updateEngineStatus('storyteller', 'error', null, (e as Error).message);
     }
   };
 
@@ -552,6 +608,24 @@ const App: React.FC = () => {
                 <span className="text-xs text-slate-400 font-mono">{isAnalyzing || isUpdating ? 'AGENTS ACTIVE' : 'SYSTEM READY'}</span>
               </div>
 
+              {/* API Usage Meter */}
+              {user && (
+                <div className="hidden sm:flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-full" title={`${apiCallsToday} of 1,500 free daily requests used`}>
+                  <Gauge className="w-3.5 h-3.5 text-slate-500" />
+                  <div className="flex flex-col gap-0.5">
+                    <div className="w-16 h-1 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          apiCallsToday > 1200 ? 'bg-red-500' : apiCallsToday > 800 ? 'bg-yellow-500' : 'bg-emerald-500'
+                        }`}
+                        style={{ width: `${Math.min(100, (apiCallsToday / 1500) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-slate-500 font-mono">{apiCallsToday}/1500 today</span>
+                  </div>
+                </div>
+              )}
+
               {user ? (
                 <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
                   <div className="flex items-center gap-2">
@@ -588,6 +662,34 @@ const App: React.FC = () => {
               )}
             </div>
           </header>
+
+          {/* Pre-Analysis Context Modal */}
+          {showContextModal && (
+            <PreAnalysisModal
+              stockSymbol={stockSymbol}
+              userQuery={userQuery}
+              onConfirm={(ctx) => {
+                setAnalysisContext(ctx);
+                setShowContextModal(false);
+                // Re-trigger analysis with context set
+                const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+                setPendingAnalysisEvent(fakeEvent);
+                setTimeout(() => handleAnalyze(fakeEvent), 0);
+              }}
+              onSkip={() => {
+                setAnalysisContext(undefined);
+                setShowContextModal(false);
+                const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+                setPendingAnalysisEvent(fakeEvent);
+                setTimeout(() => handleAnalyze(fakeEvent), 0);
+              }}
+              onClose={() => {
+                setShowContextModal(false);
+                setPendingAnalysisEvent(null);
+              }}
+            />
+          )}
+
 
           <div className="max-w-6xl mx-auto mt-6">
             {currentView === 'portfolio' ? (
@@ -1069,7 +1171,7 @@ const App: React.FC = () => {
                 {engines.synthesizer.status === 'success' && (
                   <div className="animate-fade-in-up relative">
                     {currentSessionId && user && (
-                      <div className="absolute top-4 right-4 z-10 flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-4 mb-4 justify-end bg-slate-900/50 p-3 rounded-xl border border-slate-800">
                         {/* Close / New Analysis Button */}
                         <button
                           onClick={handleClearSession}
@@ -1142,7 +1244,22 @@ const App: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    <FinalReport synthesizer={engines.synthesizer} totalTokens={calculateTotalTokens()} modelUsed={geminiModel} stockSymbol={stockSymbol} />
+                    <FinalReport
+                      synthesizer={engines.synthesizer}
+                      totalTokens={calculateTotalTokens()}
+                      modelUsed={geminiModel}
+                      stockSymbol={stockSymbol}
+                      sessionId={currentSessionId}
+                      sessionNotes={history.find(s => s.id === currentSessionId)?.notes}
+                      onSaveNotes={(notes) => {
+                        setHistory(prev => prev.map(s =>
+                          s.id === currentSessionId ? { ...s, notes } : s
+                        ));
+                      }}
+                      storytellerEngine={engines.storyteller}
+                      onGenerateStory={handleStorytellerGen}
+                    />
+
                   </div>
                 )}
 
@@ -1196,6 +1313,30 @@ const App: React.FC = () => {
           </p>
         </div>
       </footer>
+      {/* Mobile Bottom Navigation */}
+      {user && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex items-center justify-around px-2 py-2 safe-area-bottom">
+          {([
+            { view: 'home', icon: <Activity className="w-5 h-5" />, label: 'Analyze' },
+            { view: 'markets', icon: <TrendingUp className="w-5 h-5" />, label: 'Markets' },
+            { view: 'history', icon: <HistoryIcon className="w-5 h-5" />, label: 'History' },
+            { view: 'portfolio', icon: <Briefcase className="w-5 h-5" />, label: 'Portfolio' },
+          ] as { view: typeof currentView; icon: React.ReactNode; label: string }[]).map(item => (
+            <button
+              key={item.view}
+              onClick={() => setCurrentView(item.view)}
+              className={`flex flex-col items-center gap-1 px-4 py-1.5 rounded-xl transition-all ${
+                currentView === item.view
+                  ? 'text-blue-400 bg-blue-500/10'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {item.icon}
+              <span className="text-[10px] font-bold">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div >
   );
 };

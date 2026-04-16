@@ -238,3 +238,8 @@
 .pdf-export-mode button {
   display: none !important; /* Hide actionable buttons like share/copy */
 }
+
+/* Show PDF only elements */
+.pdf-export-mode .pdf-only {
+  display: block !important;
+}

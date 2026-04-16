@@ -1,4 +1,12 @@
-export type EngineId = 'planner' | 'librarian' | 'business' | 'quant' | 'forensic' | 'valuation' | 'technical' | 'updater' | 'synthesizer' | 'linkedin' | 'custom' | 'comprehensive';
+export type EngineId = 'planner' | 'librarian' | 'business' | 'quant' | 'forensic' | 'valuation' | 'technical' | 'updater' | 'synthesizer' | 'linkedin' | 'custom' | 'comprehensive' | 'storyteller';
+
+export interface AnalysisContext {
+  horizon: 'short' | 'medium' | 'long';       // <3m / 6-12m / 3+yr
+  goal: 'growth' | 'dividend' | 'balanced';   // investor goal
+  riskTolerance: 'aggressive' | 'moderate' | 'conservative';
+  position: 'fresh' | 'holding' | 'averaging' | 'reentry'; // existing position
+  hypothesis?: string;                          // user's own theory
+}
 
 export interface TokenUsage {
   promptTokenCount: number;
@@ -56,4 +64,6 @@ export interface AnalysisSession {
   totalTokens: number;
   verdict?: string; // e.g. "STRONG BUY"
   summary?: string; // One line summary
+  notes?: string;   // Analyst's personal notes
+  context?: AnalysisContext; // Pre-analysis questionnaire answers
 }
