@@ -34,12 +34,12 @@ export const renderMarkdown = (text: string) => {
 
         elements.push(
           <div key={`table-${i}`} className="my-4 rounded-xl overflow-hidden border border-slate-700/50">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto scrollbar-hide">
+              <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-800/80">
                     {headerCells.map((cell, j) => (
-                      <th key={j} className="px-3 py-2.5 text-left text-slate-300 font-bold border-b border-slate-700/50 whitespace-nowrap">
+                      <th key={j} className="px-3 py-2.5 text-left text-slate-300 font-bold border-b border-slate-700/50 whitespace-normal break-words">
                         {renderInline(cell)}
                       </th>
                     ))}
@@ -49,7 +49,7 @@ export const renderMarkdown = (text: string) => {
                   {dataRows.map((row, ri) => (
                     <tr key={ri} className={`${ri % 2 === 0 ? 'bg-slate-900/50' : 'bg-slate-800/30'} hover:bg-slate-800/60 transition-colors`}>
                       {row.map((cell, ci) => (
-                        <td key={ci} className="px-3 py-2 text-slate-300 border-b border-slate-800/50 whitespace-nowrap">
+                        <td key={ci} className="px-3 py-2 text-slate-300 border-b border-slate-800/50 whitespace-normal break-words">
                           {renderInline(cell)}
                         </td>
                       ))}
@@ -203,7 +203,8 @@ export const renderMarkdownPrint = (text: string) => {
                       color: '#111827',
                       fontWeight: 700,
                       borderBottom: '2px solid #d1d5db',
-                      whiteSpace: 'nowrap',
+                      whiteSpace: 'normal',
+                      wordBreak: 'break-word',
                       fontSize: '11px',
                       lineHeight: '1.4',
                     }}>
@@ -224,10 +225,9 @@ export const renderMarkdownPrint = (text: string) => {
                         color: '#1f2937',
                         borderBottom: '1px solid #e5e7eb',
                         whiteSpace: 'normal',
-                        wordBreak: 'break-word' as const,
+                        wordBreak: 'break-word',
                         fontSize: '11px',
                         lineHeight: '1.5',
-                        maxWidth: '250px',
                       }}>
                         {renderInlinePrint(cell)}
                       </td>

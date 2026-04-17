@@ -404,7 +404,7 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
         word-break: break-word !important;
         overflow-wrap: break-word !important;
         white-space: normal !important;
-        max-width: 200px !important;
+        min-width: 40px !important;
       }
       th {
         background-color: #f3f4f6 !important;

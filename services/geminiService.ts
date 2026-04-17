@@ -281,26 +281,108 @@ export const runEngine = async (
   console.log(`[GeminiService] Running engine: ${engineId} | stock: ${stockName} | persona: ${analysisContext ? 'yes' : 'none'}`);
   const result = await runWithWaterfall(fullPrompt, modelOverride);
 
-  // SANITIZE SYNTHESIZER OUTPUT (Strip conversational preambles)
-  // AI sometimes outputs "X is indeed listed on NSE..." or "I will now conduct..." before the actual memo.
-  if (engineId === 'synthesizer' && result.text) {
-    // Try multiple anchor points in priority order
+  // ─────────────────────────────────────────────────────────────────────────────
+  // SANITIZE AI OUTPUT — strip conversational preambles, fix duplicate SCORES
+  // Applies to: synthesizer, comprehensive
+  // ─────────────────────────────────────────────────────────────────────────────
+  if ((engineId === 'synthesizer' || engineId === 'comprehensive') && result.text) {
+
+    // 1. Strip duplicate unfilled [SCORES: Business=X,...] template lines
+    //    These appear when the model outputs the template before populating it.
+    //    Keep only the LAST occurrence of [SCORES:...] in the response (the filled one).
+    const scoresRegex = /\[SCORES:[^\]]*\]/g;
+    const scoresMatches = [...result.text.matchAll(scoresRegex)];
+    if (scoresMatches.length > 1) {
+      // Remove all but the last SCORES line
+      let cleanedText = result.text;
+      for (let i = 0; i < scoresMatches.length - 1; i++) {
+        cleanedText = cleanedText.replace(scoresMatches[i][0], '').trim();
+      }
+      result.text = cleanedText;
+      console.log(`[GeminiService] Removed ${scoresMatches.length - 1} duplicate SCORES template(s)`);
+    }
+
+    // 2. Check if the final [SCORES:...] still contains unfilled X values
+    const finalScores = result.text.match(/\[SCORES:[^\]]*\]/);
+    if (finalScores && finalScores[0].includes('=X')) {
+      console.warn('[GeminiService] SCORES still contain unfilled X values — model did not complete scoring.');
+      // Remove the unfilled SCORES line so UI does not show broken data
+      result.text = result.text.replace(finalScores[0], '').trim();
+    }
+
+    // 3. Strip conversational preambles before the actual memo content
     const anchors = [
       /(?:^|\n)(#+\s*Investment\s*Memo[:\s])/im,
-      /(?:^|\n)(\*\*Investment\s*Memo[:\s])/im,
+      /(?:^|\n)(\*\*Investment\s*Memo[:\s\*])/im,
       /(?:^|\n)(Investment\s*Memo:\s)/im,
       /(?:^|\n)(1\.\s*\*?\*?Executive\s*Summary)/im,
       /(?:^|\n)(#+\s*Executive\s*Summary)/im,
+      /(?:^|\n)(\*\*1\.\s)/im,
       /(?:^|\n)(#+\s*1\.)/im,
+      /(?:^|\n)(#+\s*STEP\s*[23])/im,
     ];
     for (const regex of anchors) {
       const match = result.text.match(regex);
       if (match && match.index !== undefined) {
-        // Trim to the start of the captured group (the actual memo content)
         const captureStart = match.index + (match[0].length - match[1].length);
         result.text = result.text.substring(captureStart).trim();
         break;
       }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // DATA COMPLETENESS CHECK — if response is data-sparse, run enrichment call
+  // Triggers when: >4 occurrences of 'not found', 'not available', 'data unavailable'
+  // Only for comprehensive and synthesizer engines (they produce full memos)
+  // ─────────────────────────────────────────────────────────────────────────────
+  if ((engineId === 'comprehensive' || engineId === 'synthesizer') && result.text) {
+    const lowerText = result.text.toLowerCase();
+    const notFoundCount = (
+      (lowerText.match(/not found/g) || []).length +
+      (lowerText.match(/not available/g) || []).length +
+      (lowerText.match(/data unavailable/g) || []).length +
+      (lowerText.match(/could not find/g) || []).length +
+      (lowerText.match(/unable to find/g) || []).length
+    );
+
+    if (notFoundCount > 4) {
+      console.warn(`[GeminiService] Data-sparse response detected (${notFoundCount} 'not found' hits). Running enrichment search...`);
+      try {
+        const enrichmentPrompt = `You previously analyzed ${stockName} but critical financial data was missing. 
+Run these TARGETED searches now and return ONLY the found data:
+
+1. "${stockName} NSE Screener financials ROE ROCE revenue profit"
+2. "${stockName} quarterly results latest FY25 FY26 revenue net profit"
+3. "${stockName} annual report FY24 FY25 results"
+4. "${stockName} share price market cap PE ratio NSE today"
+5. "${stockName} management concall highlights FY25 FY26"
+
+Return ONLY what you find — in this format:
+CMP: Rs___
+Market Cap: Rs___Cr
+PE: ___
+FY25 Revenue: Rs___Cr
+FY25 PAT: Rs___Cr
+ROE: ___%
+ROCE: ___%
+Debt/Equity: ___
+Promoter %: ___
+Key News: [latest material event]
+Source: [where you found each data point]
+
+NEVER write 'not found'. Try at least 3 different phrasings per data point before skipping.`;
+
+        const enrichment = await runWithWaterfall(enrichmentPrompt, modelOverride);
+        if (enrichment.text && enrichment.text.length > 100) {
+          result.text = result.text + `\n\n---\n**📊 Enriched Data (Auto-Retrieved):**\n${enrichment.text}`;
+          console.log('[GeminiService] Enrichment data appended successfully.');
+        }
+      } catch (enrichError) {
+        console.warn('[GeminiService] Enrichment call failed (quota or network). Proceeding with original response.');
+      }
+    } else {
+      console.log(`[GeminiService] Data completeness OK (${notFoundCount} not-found hits — within threshold).`);
     }
   }
 
