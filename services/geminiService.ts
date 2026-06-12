@@ -248,6 +248,54 @@ const runWithWaterfall = async (
   );
 };
 
+// Helper: Dynamically replace outdated static financial years in prompts with relative current ones
+const replacePromptPlaceholders = (prompt: string): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-11
+  
+  // Indian Fiscal Year starts in April (Month 3)
+  const isNewFiscalStarted = month >= 3;
+  const activeFY = isNewFiscalStarted ? year + 1 : year;
+  
+  const latestCompleted = activeFY - 1; // e.g. 2026
+  const prev1 = activeFY - 2;          // e.g. 2025
+  const prev2 = activeFY - 3;          // e.g. 2024
+  const ongoing = activeFY;             // e.g. 2027
+  const forward2 = activeFY + 1;        // e.g. 2028
+
+  const latestCompletedStr = `FY${latestCompleted - 2000}`;
+  const prev1Str = `FY${prev1 - 2000}`;
+  const prev2Str = `FY${prev2 - 2000}`;
+  const ongoingStr = `FY${ongoing - 2000}`;
+  const forward2Str = `FY${forward2 - 2000}`;
+
+  // First pass: replace static prompts with placeholders
+  let processed = prompt
+    .replace(/FY23 FY24 FY25/g, '__FY_PREV2__ __FY_PREV1__ __FY_LATEST__')
+    .replace(/FY25 FY26/g, '__FY_PREV1__ __FY_ONGOING__')
+    .replace(/FY26\/27/g, '__FY_ONGOING__/__FY_FORWARD_SHORT__')
+    .replace(/FY26\/FY27/g, '__FY_ONGOING__/__FY_FORWARD__')
+    .replace(/FY26E/g, '__FY_ONGOING__E')
+    .replace(/FY27E/g, '__FY_FORWARD__E')
+    .replace(/FY23/g, '__FY_PREV2__')
+    .replace(/FY24/g, '__FY_PREV1__')
+    .replace(/FY25/g, '__FY_LATEST__')
+    .replace(/FY26/g, '__FY_ONGOING__')
+    .replace(/FY27/g, '__FY_FORWARD__');
+
+  // Second pass: replace placeholders with current relative fiscal years
+  processed = processed
+    .replace(/__FY_PREV2__/g, prev2Str)
+    .replace(/__FY_PREV1__/g, prev1Str)
+    .replace(/__FY_LATEST__/g, latestCompletedStr)
+    .replace(/__FY_ONGOING__/g, ongoingStr)
+    .replace(/__FY_FORWARD_SHORT__/g, `${forward2 - 2000}`)
+    .replace(/__FY_FORWARD__/g, forward2Str);
+
+  return processed;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -261,14 +309,15 @@ export const runEngine = async (
   analysisContext?: AnalysisContext
 ): Promise<EngineResponse> => {
   const config = ENGINE_CONFIGS[engineId];
+  const dynamicPrompt = replacePromptPlaceholders(config.prompt);
 
   const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' });
-  let fullPrompt = `CURRENT DATE: ${today}\n\n${config.prompt}\n\nTarget Asset: ${stockName}`;
+  let fullPrompt = `CURRENT DATE: ${today}\n\n${dynamicPrompt}\n\nTarget Asset: ${stockName}`;
 
   // Inject investor persona block at the top of the prompt
   const personaBlock = buildContextBlock(analysisContext);
   if (personaBlock) {
-    fullPrompt = `CURRENT DATE: ${today}${personaBlock}\n\n${config.prompt}\n\nTarget Asset: ${stockName}`;
+    fullPrompt = `CURRENT DATE: ${today}${personaBlock}\n\n${dynamicPrompt}\n\nTarget Asset: ${stockName}`;
   }
 
   if (userQuery) {

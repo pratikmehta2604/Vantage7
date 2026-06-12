@@ -2,6 +2,35 @@ import React from 'react';
 import { EngineStatus } from '../types';
 import { X, FileText, Cpu, Link as LinkIcon, ExternalLink, Share2 } from 'lucide-react';
 
+const getSourceDomainLabel = (urlStr: string) => {
+  try {
+    const url = new URL(urlStr);
+    const host = url.hostname.toLowerCase();
+    if (host.includes('nseindia')) return 'NSE India';
+    if (host.includes('bseindia')) return 'BSE India';
+    if (host.includes('screener')) return 'Screener';
+    if (host.includes('trendlyne')) return 'Trendlyne';
+    if (host.includes('moneycontrol')) return 'MoneyControl';
+    if (host.includes('economictimes')) return 'Economic Times';
+    if (host.includes('livemint')) return 'Livemint';
+    if (host.includes('business-standard')) return 'Business Standard';
+    if (host.includes('tickertape')) return 'Tickertape';
+    if (host.includes('google')) return 'Google Search';
+    return url.hostname.replace('www.', '');
+  } catch {
+    return 'Web Source';
+  }
+};
+
+const getFaviconUrl = (urlStr: string) => {
+  try {
+    const url = new URL(urlStr);
+    return `https://www.google.com/s2/favicons?domain=${url.hostname}&sz=32`;
+  } catch {
+    return null;
+  }
+};
+
 interface AnalysisModalProps {
   engine: EngineStatus | null;
   onClose: () => void;
@@ -151,21 +180,44 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ engine, onClose }) => {
           {engine.sources && engine.sources.length > 0 && (
             <div className="mt-8 pt-6 border-t border-slate-800">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <LinkIcon className="w-3 h-3" /> Sources
+                <LinkIcon className="w-3 h-3" /> Grounding Sources
               </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {engine.sources.map((source, idx) => (
-                  <a
-                    key={idx}
-                    href={source.uri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between p-2 bg-slate-800/50 hover:bg-slate-800 rounded border border-slate-800 transition-colors group"
-                  >
-                    <span className="text-xs text-blue-400 truncate max-w-[80%]">{source.title}</span>
-                    <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-white" />
-                  </a>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {engine.sources.map((source, idx) => {
+                  const domainLabel = getSourceDomainLabel(source.uri);
+                  const favicon = getFaviconUrl(source.uri);
+                  return (
+                    <a
+                      key={idx}
+                      href={source.uri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-slate-900/60 hover:bg-slate-800/80 rounded-xl border border-slate-800/80 hover:border-blue-500/30 transition-all group shadow-sm hover:shadow-md"
+                    >
+                      {favicon && (
+                        <div className="w-6 h-6 rounded-lg bg-slate-950 flex items-center justify-center border border-slate-800 flex-shrink-0">
+                          <img
+                            src={favicon}
+                            alt={domainLabel}
+                            className="w-3.5 h-3.5 object-contain"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-blue-400 group-hover:text-blue-300 truncate mb-0.5">
+                          {source.title}
+                        </p>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider font-mono">
+                          {domainLabel}
+                        </span>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors flex-shrink-0" />
+                    </a>
+                  );
+                })}
               </div>
             </div>
           )}

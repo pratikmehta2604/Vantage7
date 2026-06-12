@@ -274,8 +274,9 @@ const FinalReport: React.FC<FinalReportProps> = ({ synthesizer, totalTokens, mod
   // --- Share Handlers ---
   const getModelLabel = () => {
     if (!modelUsed) return null;
-    if (modelUsed.includes('3-flash')) return { label: '3 Flash ✨', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+    if (modelUsed.includes('2.5-flash-lite')) return { label: '2.5 Flash-Lite', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
     if (modelUsed.includes('2.5-flash')) return { label: '2.5 Flash', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
+    if (modelUsed.includes('3-flash')) return { label: '3 Flash ✨', color: 'bg-purple-500/15 text-purple-400 border-purple-500/30' };
     return { label: modelUsed.split('-').slice(-2).join(' '), color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
   };
 

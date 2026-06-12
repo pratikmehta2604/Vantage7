@@ -97,8 +97,18 @@ const EngineCard: React.FC<EngineCardProps> = ({ engine, onViewDetails }) => {
         )}
 
         {engine.status === 'error' && (
-          <div className="flex flex-col items-center justify-center h-full text-red-400 p-2">
-            <span className="text-xs text-center">{engine.error || "Analysis Failed"}</span>
+          <div className="flex flex-col items-center justify-center h-full text-red-400 p-3 text-center bg-red-950/10 rounded-lg border border-red-950/30">
+            <AlertTriangle className="w-5 h-5 text-red-500 mb-1.5 animate-pulse" />
+            <p className="text-xs font-bold mb-0.5 text-red-400">
+              {engine.error?.includes('429') || engine.error?.toLowerCase().includes('quota') || engine.error?.toLowerCase().includes('requests') 
+                ? 'Rate Limit Exceeded (429)' 
+                : 'Analysis Failed'}
+            </p>
+            <p className="text-[10px] text-slate-500 line-clamp-3 leading-relaxed">
+              {engine.error?.includes('429') || engine.error?.toLowerCase().includes('quota')
+                ? 'Free-tier RPM limit reached. The system will auto-retry, or you can wait 1 minute.' 
+                : (engine.error || 'An unexpected API error occurred.')}
+            </p>
           </div>
         )}
       </div>

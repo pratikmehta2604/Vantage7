@@ -998,17 +998,18 @@ const App: React.FC = () => {
                               onClick={() => setGeminiModel('gemini-2.5-flash')}
                               disabled={isAnalyzing}
                               className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${geminiModel === 'gemini-2.5-flash' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
+                              title="Primary stable model with Google Search grounding (Free Tier)"
                             >
                               2.5 Flash
                             </button>
                             <button
                               type="button"
-                              onClick={() => setGeminiModel('gemini-3-flash-preview')}
+                              onClick={() => setGeminiModel('gemini-2.5-flash-lite')}
                               disabled={isAnalyzing}
-                              className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${geminiModel === 'gemini-3-flash-preview' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
-                              title="Latest model — superior search & grounding (limited quota)"
+                              className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${geminiModel === 'gemini-2.5-flash-lite' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
+                              title="Lite model with Google Search grounding (Free Tier, separate rate limits)"
                             >
-                              3 Flash ✨
+                              2.5 Flash-Lite
                             </button>
                           </div>
                         </div>
@@ -1116,7 +1117,7 @@ const App: React.FC = () => {
 
                   const completedSteps = steps.filter(s => s.done).length;
                   const activeIdx = isComparison ? completedSteps : 0;
-                  const modelLabel = geminiModel.includes('3-flash') ? 'Gemini 3 Flash ✨' : 'Gemini 2.5 Flash';
+                  const modelLabel = geminiModel === 'gemini-2.5-flash-lite' ? 'Gemini 2.5 Flash-Lite' : 'Gemini 2.5 Flash';
 
                   return (
                     <div className="p-6 bg-slate-900 border border-blue-500/20 rounded-2xl shadow-2xl animate-fade-in-up relative overflow-hidden">
