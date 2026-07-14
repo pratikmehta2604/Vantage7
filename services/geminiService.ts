@@ -51,37 +51,34 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODEL REGISTRY
-// Based on official Gemini API docs (April 2026):
-//   - gemini-2.5-flash         → Stable, FREE tier, Search grounding ✅
-//   - gemini-2.5-flash-lite    → Stable, FREE tier, Search grounding ✅
-//   - gemini-3-flash-preview   → Preview, paid-only search billing per query,
-//                                 more restrictive rate limits on free tier
-//   - gemini-1.5-flash         → SHUT DOWN — do NOT use
+// Based on official Gemini API pricing page (July 2026):
+//   - gemini-2.5-flash         → Stable/GA, FREE tier, Google Search grounding ✅ (500 RPD shared with Lite)
+//   - gemini-2.5-flash-lite    → Stable/GA, FREE tier, Google Search grounding ✅ (500 RPD shared with Flash)
+//   - gemini-3.5-flash         → GA, FREE tokens but NO free Google Search grounding ❌
+//   - gemini-3.1-flash-live-preview → Live API only (WebSocket), NOT compatible with generateContent()
 //
 // Strategy:
-//   1. Primary: gemini-2.5-flash (stable, search, free ✅)
-//   2. Fallback: gemini-2.5-flash-lite (stable, search, free ✅)
+//   1. Primary: gemini-2.5-flash (stable, free search grounding)
+//   2. Fallback: gemini-2.5-flash-lite (stable, free search grounding, shared RPD budget)
 //
-// Gemini 3 preview is NOT used as an automatic fallback because:
-//   a) It has MORE RESTRICTIVE rate limits on free tier (worse, not better)
-//   b) Preview status means it can change/break at any time
-//   c) Billing model changed — each search query is billed separately for Gemini 3
+// The 2.5 Flash + Lite pair are the ONLY models with free Google Search grounding.
+// All Gemini 3.x models require paid tier for search. We stay on 2.5 for free users.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // All models that support Google Search grounding on free tier
+  // Models with FREE Google Search grounding (Standard tier)
   SEARCH_CAPABLE: [
-    'gemini-2.5-flash',         // Primary: stable, best quality
-    'gemini-2.5-flash-lite',    // Fallback: stable, lighter, has separate RPM budget
+    'gemini-2.5-flash',         // Primary: stable, best quality with free search
+    'gemini-2.5-flash-lite',    // Fallback: stable, lighter, free search, shared RPD budget
   ],
-  // Models that support search but are NOT used in the auto-fallback waterfall
-  // (preview models, billing changes, restrictive limits)
-  SEARCH_CAPABLE_PAID_OR_PREVIEW: [
-    'gemini-3-flash-preview',
+  // Models that exist but do NOT have free search grounding
+  SEARCH_CAPABLE_PAID_ONLY: [
+    'gemini-3.5-flash',         // Latest GA model, but search grounding = paid only
   ],
   // These models do NOT exist or are shut down — never call these
   INVALID: [
-    'gemini-3-flash',           // Does not exist (correct name is gemini-3-flash-preview)
+    'gemini-3-flash',           // Does not exist
+    'gemini-3-flash-preview',   // Deprecated
     'gemini-1.5-flash',         // SHUT DOWN
     'gemini-1.5-pro',           // SHUT DOWN
   ]
@@ -395,32 +392,48 @@ export const runEngine = async (
       (lowerText.match(/unable to find/g) || []).length
     );
 
-    if (notFoundCount > 4) {
+    if (notFoundCount > 2) {
       console.warn(`[GeminiService] Data-sparse response detected (${notFoundCount} 'not found' hits). Running enrichment search...`);
       try {
-        const enrichmentPrompt = `You previously analyzed ${stockName} but critical financial data was missing. 
-Run these TARGETED searches now and return ONLY the found data:
+        const currentYear = new Date().getFullYear();
+        const enrichmentPrompt = `You previously analyzed ${stockName} but critical financial data was missing.
+Your job: find the missing data using TARGETED searches. Try multiple sources for each data point.
 
-1. "${stockName} NSE Screener financials ROE ROCE revenue profit"
-2. "${stockName} quarterly results latest FY25 FY26 revenue net profit"
-3. "${stockName} annual report FY24 FY25 results"
-4. "${stockName} share price market cap PE ratio NSE today"
-5. "${stockName} management concall highlights FY25 FY26"
+MANDATORY SEARCHES (Run ALL — try different phrasings if first attempt fails):
+1. "${stockName} financials revenue profit ROE ROCE site:screener.in"
+2. "${stockName} quarterly results latest revenue profit site:moneycontrol.com"
+3. "${stockName} annual report results site:bseindia.com"
+4. "${stockName} share price market cap PE ratio NSE BSE today"
+5. "${stockName} management guidance concall highlights latest"
+6. "${stockName} financials site:trendlyne.com"
+7. "${stockName} shareholding pattern promoter FII DII"
+8. "${stockName} order book pipeline new contracts ${currentYear}"
 
-Return ONLY what you find — in this format:
+For EACH data point below, try at least 2 different sources before skipping:
+
+Return ONLY what you find — in this exact format:
 CMP: Rs___
 Market Cap: Rs___Cr
+52W High/Low: Rs___ / Rs___
 PE: ___
-FY25 Revenue: Rs___Cr
-FY25 PAT: Rs___Cr
+Industry PE: ___
+FY${currentYear - 1} Revenue: Rs___Cr
+FY${currentYear - 1} PAT: Rs___Cr
+FY${currentYear} Revenue (if available): Rs___Cr
 ROE: ___%
 ROCE: ___%
 Debt/Equity: ___
-Promoter %: ___
-Key News: [latest material event]
-Source: [where you found each data point]
+Promoter Holding: ___%
+Promoter Pledge: ___%
+FII Holding: ___%
+DII Holding: ___%
+Key Recent News: [one material event from last 90 days]
+Source: [cite where you found each data point]
 
-NEVER write 'not found'. Try at least 3 different phrasings per data point before skipping.`;
+RULES:
+- NEVER write 'not found' or 'not available'. Try 3 different phrasings before skipping a field.
+- Use actual numbers from search results. Do not estimate or fabricate.
+- If a metric genuinely cannot be found after multiple searches, simply omit that line.`;
 
         const enrichment = await runWithWaterfall(enrichmentPrompt, modelOverride);
         if (enrichment.text && enrichment.text.length > 100) {

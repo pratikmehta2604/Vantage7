@@ -1259,6 +1259,7 @@ const App: React.FC = () => {
                       }}
                       storytellerEngine={engines.storyteller}
                       onGenerateStory={handleStorytellerGen}
+                      scanMode={scanMode}
                     />
 
                   </div>
